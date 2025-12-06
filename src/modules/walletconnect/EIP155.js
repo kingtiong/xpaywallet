@@ -82,4 +82,11 @@ export const EIP155_SIGNING_METHODS = {
     ETH_SIGN_TYPED_DATA_V4: 'eth_signTypedData_v4',
     ETH_SEND_RAW_TRANSACTION: 'eth_sendRawTransaction',
     ETH_SEND_TRANSACTION: 'eth_sendTransaction',
+    ETH_ACCOUNTS: 'eth_accounts',
+    ETH_REQUEST_ACCOUNTS: 'eth_requestAccounts',
+    ETH_CHAIN_ID: 'eth_chainId',
+    ETH_BLOCK_NUMBER: 'eth_blockNumber',
+    NET_VERSION: 'net_version',
+    WALLET_SWITCH_ETHEREUM_CHAIN: 'wallet_switchEthereumChain',
+    WALLET_ADD_ETHEREUM_CHAIN: 'wallet_addEthereumChain',
 };

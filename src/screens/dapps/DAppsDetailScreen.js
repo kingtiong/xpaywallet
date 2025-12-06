@@ -27,10 +27,74 @@ import {
 import { WalletFactory } from '@modules/core/factory/WalletFactory';
 import { getSdkError } from '@walletconnect/utils';
 import _ from 'lodash';
-import { CHAIN_ID_TYPE_MAP } from '@modules/core/constant/constant';
+import { CHAIN_ID_MAP, CHAIN_ID_TYPE_MAP } from '@modules/core/constant/constant';
 import { WalletConnectAction } from '@persistence/walletconnect/WalletConnectAction';
 import CommonAlert from '@components/commons/CommonAlert';
 import { useTranslation } from 'react-i18next';
+
+const SIGNING_METHODS = [
+    EIP155_SIGNING_METHODS.ETH_SIGN,
+    EIP155_SIGNING_METHODS.PERSONAL_SIGN,
+    EIP155_SIGNING_METHODS.ETH_SIGN_TYPED_DATA,
+    EIP155_SIGNING_METHODS.ETH_SIGN_TYPED_DATA_V3,
+    EIP155_SIGNING_METHODS.ETH_SIGN_TYPED_DATA_V4,
+    EIP155_SIGNING_METHODS.ETH_SEND_TRANSACTION,
+    EIP155_SIGNING_METHODS.ETH_SIGN_TRANSACTION,
+];
+
+const PASSIVE_METHODS = [
+    EIP155_SIGNING_METHODS.ETH_CHAIN_ID,
+    EIP155_SIGNING_METHODS.ETH_ACCOUNTS,
+    EIP155_SIGNING_METHODS.ETH_REQUEST_ACCOUNTS,
+    EIP155_SIGNING_METHODS.ETH_BLOCK_NUMBER,
+    EIP155_SIGNING_METHODS.NET_VERSION,
+    EIP155_SIGNING_METHODS.WALLET_SWITCH_ETHEREUM_CHAIN,
+    EIP155_SIGNING_METHODS.WALLET_ADD_ETHEREUM_CHAIN,
+];
+
+const SUPPORTED_METHODS = [...SIGNING_METHODS, ...PASSIVE_METHODS];
+const DEFAULT_CHAIN_ID = 1;
+const DEFAULT_CHAIN_KEY = 'ETH';
+
+const extractNamespaceChainId = chainId =>
+    chainId && chainId.includes(':') ? chainId.split(':')[1] : chainId;
+
+const getChainIdFromValue = value => {
+    if (!value && value !== 0) {
+        return null;
+    }
+    if (typeof value === 'number') {
+        return value;
+    }
+    if (typeof value === 'string') {
+        if (value.startsWith('0x')) {
+            return parseInt(value, 16);
+        }
+        if (/^\d+$/.test(value)) {
+            return Number(value);
+        }
+        const upper = value.toUpperCase();
+        if (CHAIN_ID_MAP[upper]) {
+            return CHAIN_ID_MAP[upper];
+        }
+    }
+    return null;
+};
+
+const getChainKeyFromValue = value => {
+    if (value === undefined || value === null || value === '') {
+        return null;
+    }
+    if (CHAIN_ID_TYPE_MAP[value]) {
+        return CHAIN_ID_TYPE_MAP[value];
+    }
+    const numeric = getChainIdFromValue(value);
+    if (numeric !== null && CHAIN_ID_TYPE_MAP[numeric]) {
+        return CHAIN_ID_TYPE_MAP[numeric];
+    }
+    const upper = value.toString().toUpperCase();
+    return CHAIN_ID_MAP[upper] ? upper : null;
+};
 
 export default function DAppsDetailScreen({ navigation, route }) {
     const { item } = route.params;
@@ -181,7 +245,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
             });
             CommonLoading.hide();
         },
-        [t],
+        [handleAutoApproveRequest, onRejectRequest, t],
     );
 
     // Handle WebView messages
@@ -219,6 +283,45 @@ export default function DAppsDetailScreen({ navigation, route }) {
             }
         },
         [loading, t],
+    );
+
+    const handleAutoApproveRequest = useCallback(
+        async requestEvent => {
+            try {
+                const namespaceChainId = requestEvent?.params?.chainId;
+                const extractedChainId = extractNamespaceChainId(namespaceChainId);
+                const fallbackChainValue = extractedChainId || activeChain || DEFAULT_CHAIN_ID;
+                const resolvedChainId =
+                    getChainIdFromValue(fallbackChainValue) || DEFAULT_CHAIN_ID;
+                const resolvedChainKey =
+                    getChainKeyFromValue(fallbackChainValue) || DEFAULT_CHAIN_KEY;
+                const wallet = await WalletFactory.getWallet(resolvedChainKey);
+                if (!wallet) {
+                    throw new Error(`Wallet not found for chain: ${resolvedChainKey}`);
+                }
+                const response = await approveEIP155Request(
+                    requestEvent,
+                    wallet.signer,
+                    {
+                        chainId: resolvedChainId,
+                        chainIdHex: `0x${resolvedChainId.toString(16)}`,
+                    },
+                );
+                await web3wallet.respondSessionRequest({
+                    topic: requestEvent.topic,
+                    response,
+                });
+            } catch (error) {
+                console.error('Auto approval failed:', error);
+                CommonAlert.show({
+                    title: t('alert.error'),
+                    message: error.message || t('walletconnect.request_approval_error'),
+                    type: 'error',
+                });
+                await onRejectRequest(requestEvent);
+            }
+        },
+        [activeChain, onRejectRequest, t],
     );
 
     // Pair with WalletConnect URI
@@ -293,17 +396,12 @@ export default function DAppsDetailScreen({ navigation, route }) {
             setRequestSession(session);
             setRequestEventData(requestEvent);
 
-            const supportedMethods = [
-                EIP155_SIGNING_METHODS.ETH_SIGN,
-                EIP155_SIGNING_METHODS.PERSONAL_SIGN,
-                EIP155_SIGNING_METHODS.ETH_SIGN_TYPED_DATA,
-                EIP155_SIGNING_METHODS.ETH_SIGN_TYPED_DATA_V3,
-                EIP155_SIGNING_METHODS.ETH_SIGN_TYPED_DATA_V4,
-                EIP155_SIGNING_METHODS.ETH_SEND_TRANSACTION,
-                EIP155_SIGNING_METHODS.ETH_SIGN_TRANSACTION,
-            ];
+            if (PASSIVE_METHODS.includes(request.method)) {
+                await handleAutoApproveRequest(requestEvent);
+                return;
+            }
 
-            if (supportedMethods.includes(request.method)) {
+            if (SIGNING_METHODS.includes(request.method)) {
                 approvalRequestModal.current?.show();
             } else {
                 console.warn('Unsupported method:', request.method);
@@ -333,12 +431,16 @@ export default function DAppsDetailScreen({ navigation, route }) {
                 ? optionalNamespaces
                 : requiredNamespaces;
 
-            const chainId = activeChain || '1';
-            console.log('Approving session for chain:', chainId);
-            const wallet = await WalletFactory.getWallet(CHAIN_ID_TYPE_MAP[chainId]);
+            const chainIdValue = getChainIdFromValue(activeChain) || DEFAULT_CHAIN_ID;
+            const chainKey =
+                CHAIN_ID_TYPE_MAP[chainIdValue] ||
+                getChainKeyFromValue(activeChain) ||
+                DEFAULT_CHAIN_KEY;
+            console.log('Approving session for chain:', chainIdValue);
+            const wallet = await WalletFactory.getWallet(chainKey);
 
             if (!wallet) {
-                console.error('Wallet not found for chain:', chainId);
+                console.error('Wallet not found for chain:', chainKey);
                 CommonAlert.show({
                     title: t('alert.error'),
                     message: t('walletconnect.unsupported_network'),
@@ -370,7 +472,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
             dispatch(
                 WalletConnectAction.add({
                     [uri]: {
-                        chain: CHAIN_ID_TYPE_MAP[chainId],
+                            chain: chainKey,
                         approveSession,
                         pairingProposal,
                     },
@@ -424,9 +526,10 @@ export default function DAppsDetailScreen({ navigation, route }) {
 
         try {
             CommonLoading.show();
-            const wallet = await WalletFactory.getWallet(activeChain);
+            const targetChain = getChainKeyFromValue(activeChain) || DEFAULT_CHAIN_KEY;
+            const wallet = await WalletFactory.getWallet(targetChain);
             if (!wallet) {
-                throw new Error('Wallet not found for chain: ' + activeChain);
+                throw new Error('Wallet not found for chain: ' + targetChain);
             }
 
             console.log('Approving request:', JSON.stringify(requestEventData, null, 2));
@@ -452,20 +555,15 @@ export default function DAppsDetailScreen({ navigation, route }) {
     // Reject request
     const onRejectRequest = useCallback(
         async (event = requestEventData) => {
-            if (!event || !activeChain) {
-                console.error('No event or active chain for rejection');
+            if (!event) {
+                console.error('No request event to reject');
                 return;
             }
 
             try {
                 CommonLoading.show();
-                const wallet = await WalletFactory.getWallet(activeChain);
-                if (!wallet) {
-                    throw new Error('Wallet not found for chain: ' + activeChain);
-                }
-
                 console.log('Rejecting request:', event.id);
-                const response = rejectEIP155Request(event, wallet.signer);
+                const response = rejectEIP155Request(event);
                 await web3wallet.respondSessionRequest({
                     topic: event.topic,
                     response,
@@ -483,7 +581,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
                 CommonLoading.hide();
             }
         },
-        [requestEventData, activeChain, t],
+        [requestEventData, t],
     );
 
     // Handle WebView navigation
