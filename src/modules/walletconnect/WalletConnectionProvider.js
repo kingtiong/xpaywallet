@@ -435,6 +435,57 @@ export class WalletConnectionProvider {
                     }
                 };
 
+                // Provide compatibility bridge for DApps expecting `window.dappwallet`
+                (function initDappWalletBridge() {
+                    const ensureFunction = (fn) => typeof fn === 'function' ? fn : () => {};
+                    const createBridge = () => ({
+                        version: '1.0.0',
+                        name: 'NewXPay DApp Wallet',
+                        isDappWallet: true,
+                        isMetaMask: true,
+                        get provider() {
+                            return window.ethereum;
+                        },
+                        get chainId() {
+                            return window.ethereum?.chainId || currentChainId;
+                        },
+                        get selectedAddress() {
+                            return window.ethereum?.selectedAddress || null;
+                        },
+                        isConnected: () => {
+                            if (window.ethereum?.isConnected) {
+                                return window.ethereum.isConnected();
+                            }
+                            return !!(window.ethereum && window.ethereum.selectedAddress);
+                        },
+                        connect: () => {
+                            if (window.ethereum?.request) {
+                                return window.ethereum.request({ method: 'eth_requestAccounts' });
+                            }
+                            return Promise.reject(new Error('Provider not ready'));
+                        },
+                        request: (args) => {
+                            if (window.ethereum?.request) {
+                                return window.ethereum.request(args);
+                            }
+                            return Promise.reject(new Error('Provider not ready'));
+                        },
+                        getProvider: () => window.ethereum,
+                        on: (...params) => ensureFunction(window.ethereum?.on)(...params),
+                        removeListener: (...params) => ensureFunction(window.ethereum?.removeListener)(...params)
+                    });
+
+                    const bridge = createBridge();
+                    window.dappwallet = Object.assign(window.dappwallet || {}, bridge);
+                    window.dappWallet = window.dappWallet || window.dappwallet;
+
+                    try {
+                        window.dispatchEvent(new Event('dappwallet#initialized'));
+                    } catch (e) {
+                        // Ignore environments that don't support custom events yet
+                    }
+                })();
+
                 // Dispatch events to notify DApp that ethereum is ready
                 window.dispatchEvent(new Event('ethereum#initialized'));
                 
