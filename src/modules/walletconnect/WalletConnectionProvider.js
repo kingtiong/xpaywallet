@@ -130,7 +130,7 @@ export class WalletConnectionProvider {
                 case 'eth_signTypedData':
                 case 'eth_signTypedData_v3':
                 case 'eth_signTypedData_v4':
-                    return await this.signTypedData(params[0], params[1], chain);
+                    return await this.signTypedData(method, params, chain);
 
                 case 'wallet_switchEthereumChain':
                     const [{ chainId }] = params;
@@ -280,13 +280,53 @@ export class WalletConnectionProvider {
         return txResponse.hash;
     }
 
-    // Sign typed data
-    async signTypedData(domain, types, chain) {
+    // Sign typed data (EIP-712)
+    async signTypedData(method, params, chain) {
         const wallet = this.getConnectedWallet(chain);
         if (!wallet) throw new Error('No wallet connected');
 
-        // This would need to be implemented based on your typed data signing requirements
-        throw new Error('Typed data signing not implemented');
+        if (!wallet.wallet?.signer?._signTypedData) {
+            throw new Error('Typed data signing not supported');
+        }
+
+        let address;
+        let rawData;
+
+        switch (method) {
+            case 'eth_signTypedData':
+                // Legacy order: data first, address second
+                [rawData, address] = params;
+                break;
+            case 'eth_signTypedData_v3':
+            case 'eth_signTypedData_v4':
+            default:
+                // Modern order: address first, data second
+                [address, rawData] = params;
+                break;
+        }
+
+        if (!address || wallet.address.toLowerCase() !== address.toLowerCase()) {
+            throw new Error('Address mismatch');
+        }
+
+        if (!rawData) {
+            throw new Error('Typed data payload missing');
+        }
+
+        let typedData = rawData;
+        if (typeof typedData === 'string') {
+            try {
+                typedData = JSON.parse(typedData);
+            } catch (error) {
+                throw new Error('Invalid typed data JSON');
+            }
+        }
+
+        const { domain = {}, types = {}, message = {} } = typedData;
+        const sanitizedTypes = { ...types };
+        delete sanitizedTypes.EIP712Domain; // ethers handles domain separately
+
+        return await wallet.wallet.signer._signTypedData(domain, sanitizedTypes, message);
     }
 
     // Switch chain
@@ -434,6 +474,57 @@ export class WalletConnectionProvider {
                         });
                     }
                 };
+
+                // Provide compatibility bridge for DApps expecting `window.dappwallet`
+                (function initDappWalletBridge() {
+                    const ensureFunction = (fn) => typeof fn === 'function' ? fn : () => {};
+                    const createBridge = () => ({
+                        version: '1.0.0',
+                        name: 'NewXPay DApp Wallet',
+                        isDappWallet: true,
+                        isMetaMask: true,
+                        get provider() {
+                            return window.ethereum;
+                        },
+                        get chainId() {
+                            return window.ethereum?.chainId || currentChainId;
+                        },
+                        get selectedAddress() {
+                            return window.ethereum?.selectedAddress || null;
+                        },
+                        isConnected: () => {
+                            if (window.ethereum?.isConnected) {
+                                return window.ethereum.isConnected();
+                            }
+                            return !!(window.ethereum && window.ethereum.selectedAddress);
+                        },
+                        connect: () => {
+                            if (window.ethereum?.request) {
+                                return window.ethereum.request({ method: 'eth_requestAccounts' });
+                            }
+                            return Promise.reject(new Error('Provider not ready'));
+                        },
+                        request: (args) => {
+                            if (window.ethereum?.request) {
+                                return window.ethereum.request(args);
+                            }
+                            return Promise.reject(new Error('Provider not ready'));
+                        },
+                        getProvider: () => window.ethereum,
+                        on: (...params) => ensureFunction(window.ethereum?.on)(...params),
+                        removeListener: (...params) => ensureFunction(window.ethereum?.removeListener)(...params)
+                    });
+
+                    const bridge = createBridge();
+                    window.dappwallet = Object.assign(window.dappwallet || {}, bridge);
+                    window.dappWallet = window.dappWallet || window.dappwallet;
+
+                    try {
+                        window.dispatchEvent(new Event('dappwallet#initialized'));
+                    } catch (e) {
+                        // Ignore environments that don't support custom events yet
+                    }
+                })();
 
                 // Dispatch events to notify DApp that ethereum is ready
                 window.dispatchEvent(new Event('ethereum#initialized'));
