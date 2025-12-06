@@ -257,7 +257,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
             });
             CommonLoading.hide();
         },
-        [handlePassiveRequest, onRejectRequest, t],
+        [t],
     );
 
     // Handle WebView messages
@@ -295,6 +295,38 @@ export default function DAppsDetailScreen({ navigation, route }) {
             }
         },
         [loading, t],
+    );
+
+    // Reject request
+    const onRejectRequest = useCallback(
+        async (event = requestEventData) => {
+            if (!event) {
+                console.error('No request event to reject');
+                return;
+            }
+
+            try {
+                CommonLoading.show();
+                console.log('Rejecting request:', event.id);
+                const response = rejectEIP155Request(event);
+                await web3wallet.respondSessionRequest({
+                    topic: event.topic,
+                    response,
+                });
+                console.log('Request rejected successfully');
+                approvalRequestModal.current?.hide();
+            } catch (error) {
+                console.error('Request rejection failed:', error);
+                CommonAlert.show({
+                    title: t('alert.error'),
+                    message: t('walletconnect.request_rejection_error'),
+                    type: 'error',
+                });
+            } finally {
+                CommonLoading.hide();
+            }
+        },
+        [requestEventData, t],
     );
 
     const handlePassiveRequest = useCallback(
@@ -547,7 +579,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
                 throw error;
             }
         },
-        [handleChainManagementRequest, handlePassiveRequest, onRejectRequest, t],
+        [t],
     );
 
     // Handle session proposal
@@ -622,7 +654,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
                 await onRejectRequest(requestEvent);
             }
         },
-        [t],
+        [handleChainManagementRequest, handlePassiveRequest, onRejectRequest, t],
     );
 
     // Approve session
@@ -760,38 +792,6 @@ export default function DAppsDetailScreen({ navigation, route }) {
             CommonLoading.hide();
         }
     }, [requestEventData, activeChain, t]);
-
-    // Reject request
-    const onRejectRequest = useCallback(
-        async (event = requestEventData) => {
-            if (!event) {
-                console.error('No request event to reject');
-                return;
-            }
-
-            try {
-                CommonLoading.show();
-                console.log('Rejecting request:', event.id);
-                const response = rejectEIP155Request(event);
-                await web3wallet.respondSessionRequest({
-                    topic: event.topic,
-                    response,
-                });
-                console.log('Request rejected successfully');
-                approvalRequestModal.current?.hide();
-            } catch (error) {
-                console.error('Request rejection failed:', error);
-                CommonAlert.show({
-                    title: t('alert.error'),
-                    message: t('walletconnect.request_rejection_error'),
-                    type: 'error',
-                });
-            } finally {
-                CommonLoading.hide();
-            }
-        },
-        [requestEventData, t],
-    );
 
     // Handle WebView navigation
     const onShouldStartLoad = useCallback(
