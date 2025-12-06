@@ -288,17 +288,46 @@ export default function DAppsDetailScreen({ navigation, route }) {
     const handleAutoApproveRequest = useCallback(
         async requestEvent => {
             try {
+                const { request } = requestEvent.params;
+                const method = request.method;
                 const namespaceChainId = requestEvent?.params?.chainId;
                 const extractedChainId = extractNamespaceChainId(namespaceChainId);
-                const fallbackChainValue = extractedChainId || activeChain || DEFAULT_CHAIN_ID;
-                const resolvedChainId =
-                    getChainIdFromValue(fallbackChainValue) || DEFAULT_CHAIN_ID;
-                const resolvedChainKey =
-                    getChainKeyFromValue(fallbackChainValue) || DEFAULT_CHAIN_KEY;
-                const wallet = await WalletFactory.getWallet(resolvedChainKey);
+                let resolvedChainValue = extractedChainId || activeChain || DEFAULT_CHAIN_ID;
+                let resolvedChainId =
+                    getChainIdFromValue(resolvedChainValue) || DEFAULT_CHAIN_ID;
+                let resolvedChainKey =
+                    getChainKeyFromValue(resolvedChainValue) || DEFAULT_CHAIN_KEY;
+                let wallet = null;
+
+                if (method === EIP155_SIGNING_METHODS.WALLET_SWITCH_ETHEREUM_CHAIN) {
+                    const chainParam = request.params?.[0];
+                    const desiredChain =
+                        chainParam?.chainId || chainParam?.chainIdHex || chainParam;
+                    const parsedChainId = getChainIdFromValue(desiredChain);
+                    if (!parsedChainId) {
+                        throw new Error('Invalid chain requested by DApp');
+                    }
+                    const parsedChainKey =
+                        CHAIN_ID_TYPE_MAP[parsedChainId] ||
+                        getChainKeyFromValue(parsedChainId) ||
+                        DEFAULT_CHAIN_KEY;
+                    wallet = await WalletFactory.getWallet(parsedChainKey);
+                    if (!wallet) {
+                        throw new Error('Requested chain is not available in wallet');
+                    }
+                    setActiveChain(parsedChainId.toString());
+                    resolvedChainId = parsedChainId;
+                    resolvedChainKey = parsedChainKey;
+                }
+
+                if (!wallet) {
+                    wallet = await WalletFactory.getWallet(resolvedChainKey);
+                }
+
                 if (!wallet) {
                     throw new Error(`Wallet not found for chain: ${resolvedChainKey}`);
                 }
+
                 const response = await approveEIP155Request(
                     requestEvent,
                     wallet.signer,
