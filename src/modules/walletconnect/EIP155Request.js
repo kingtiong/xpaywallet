@@ -116,7 +116,7 @@ export async function approveEIP155Request(
       return formatJsonRpcResult(id, null);
 
     case EIP155_SIGNING_METHODS.WALLET_ADD_ETHEREUM_CHAIN:
-      return formatJsonRpcError(id, getSdkError('UNSUPPORTED_METHODS').message);
+      return formatJsonRpcResult(id, null);
 
     default:
       throw new Error(getSdkError("INVALID_METHOD").message);

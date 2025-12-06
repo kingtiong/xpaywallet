@@ -52,6 +52,15 @@ const PASSIVE_METHODS = [
     EIP155_SIGNING_METHODS.WALLET_ADD_ETHEREUM_CHAIN,
 ];
 
+const CHAIN_MANAGEMENT_METHODS = [
+    EIP155_SIGNING_METHODS.WALLET_SWITCH_ETHEREUM_CHAIN,
+    EIP155_SIGNING_METHODS.WALLET_ADD_ETHEREUM_CHAIN,
+];
+
+const AUTO_APPROVED_METHODS = PASSIVE_METHODS.filter(
+    method => !CHAIN_MANAGEMENT_METHODS.includes(method),
+);
+
 const SUPPORTED_METHODS = [...SIGNING_METHODS, ...PASSIVE_METHODS];
 const DEFAULT_CHAIN_ID = 1;
 const DEFAULT_CHAIN_KEY = 'ETH';
@@ -105,6 +114,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
 
     const approvalSessionModal = useRef(null);
     const approvalRequestModal = useRef(null);
+    const networkRequestModal = useRef(null);
     const webRef = useRef(null);
 
     const [loading, setLoading] = useState(false);
@@ -114,6 +124,8 @@ export default function DAppsDetailScreen({ navigation, route }) {
     const [requestSession, setRequestSession] = useState(null);
     const [requiredNamespaces, setRequiredNamespaces] = useState({});
     const [activeChain, setActiveChain] = useState('');
+    const [networkRequestEvent, setNetworkRequestEvent] = useState(null);
+    const [networkRequestInfo, setNetworkRequestInfo] = useState(null);
 
     // Initialize WalletConnect
     useEffect(() => {
@@ -245,7 +257,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
             });
             CommonLoading.hide();
         },
-        [handleAutoApproveRequest, onRejectRequest, t],
+        [handlePassiveRequest, onRejectRequest, t],
     );
 
     // Handle WebView messages
@@ -285,7 +297,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
         [loading, t],
     );
 
-    const handleAutoApproveRequest = useCallback(
+    const handlePassiveRequest = useCallback(
         async requestEvent => {
             try {
                 const { request } = requestEvent.params;
@@ -353,6 +365,169 @@ export default function DAppsDetailScreen({ navigation, route }) {
         [activeChain, onRejectRequest, t],
     );
 
+    const resetNetworkRequestState = useCallback(() => {
+        setNetworkRequestEvent(null);
+        setNetworkRequestInfo(null);
+    }, []);
+
+    const handleChainManagementRequest = useCallback(
+        (requestEvent, sessionData) => {
+            try {
+                const { request } = requestEvent.params;
+                if (!request?.params?.length) {
+                    throw new Error('Missing chain parameters');
+                }
+                const chainParams = request.params[0] || {};
+                const chainValue =
+                    chainParams.chainIdHex ||
+                    chainParams.chainId ||
+                    chainParams.chainIdDecimal ||
+                    chainParams;
+                const numericChainId = getChainIdFromValue(chainValue);
+                const chainKey = getChainKeyFromValue(chainValue);
+                const metadata =
+                    requestEvent?.params?.requester?.metadata ||
+                    sessionData?.peer?.metadata ||
+                    pairingProposal?.params?.proposer?.metadata ||
+                    {};
+
+                setNetworkRequestInfo({
+                    method: request.method,
+                    type:
+                        request.method ===
+                        EIP155_SIGNING_METHODS.WALLET_SWITCH_ETHEREUM_CHAIN
+                            ? 'switch'
+                            : 'add',
+                    chainId: numericChainId,
+                    chainIdHex: chainValue,
+                    chainKey,
+                    params: chainParams,
+                    dappName: metadata?.name || 'Unknown DApp',
+                    dappUrl: metadata?.url || '',
+                });
+                setNetworkRequestEvent(requestEvent);
+                networkRequestModal.current?.show();
+            } catch (error) {
+                console.error('Failed to prepare chain management request:', error);
+                CommonAlert.show({
+                    title: t('alert.error'),
+                    message: error.message || 'Invalid network request',
+                    type: 'error',
+                });
+                onRejectRequest(requestEvent);
+            }
+        },
+        [onRejectRequest, pairingProposal, t],
+    );
+
+    const onApproveNetworkRequest = useCallback(async () => {
+        if (!networkRequestEvent) {
+            return;
+        }
+        try {
+            CommonLoading.show();
+            const { request } = networkRequestEvent.params;
+            let response = null;
+
+            if (request.method === EIP155_SIGNING_METHODS.WALLET_SWITCH_ETHEREUM_CHAIN) {
+                const chainParams = request.params?.[0] || {};
+                const chainValue =
+                    chainParams.chainIdHex ||
+                    chainParams.chainId ||
+                    chainParams.chainIdDecimal ||
+                    chainParams;
+                const parsedChainId = getChainIdFromValue(chainValue);
+                if (!parsedChainId) {
+                    throw new Error('Invalid chain requested');
+                }
+                const targetChainKey =
+                    CHAIN_ID_TYPE_MAP[parsedChainId] ||
+                    getChainKeyFromValue(chainValue) ||
+                    DEFAULT_CHAIN_KEY;
+                const wallet = await WalletFactory.getWallet(targetChainKey);
+                if (!wallet) {
+                    throw new Error('Requested chain is not available in wallet');
+                }
+                setActiveChain(parsedChainId.toString());
+                response = await approveEIP155Request(
+                    networkRequestEvent,
+                    wallet.signer,
+                    {
+                        chainId: parsedChainId,
+                        chainIdHex: `0x${parsedChainId.toString(16)}`,
+                    },
+                );
+            } else if (request.method === EIP155_SIGNING_METHODS.WALLET_ADD_ETHEREUM_CHAIN) {
+                const chainParams = request.params?.[0] || {};
+                const chainValue =
+                    chainParams.chainIdHex ||
+                    chainParams.chainId ||
+                    chainParams.chainIdDecimal ||
+                    chainParams;
+                const parsedChainId = getChainIdFromValue(chainValue);
+                if (!parsedChainId) {
+                    throw new Error('Invalid chain details provided');
+                }
+                if (!CHAIN_ID_TYPE_MAP[parsedChainId]) {
+                    throw new Error('Requested chain is not supported by this wallet');
+                }
+                response = await approveEIP155Request(
+                    networkRequestEvent,
+                    null,
+                    {
+                        chainId: parsedChainId,
+                        chainIdHex: `0x${parsedChainId.toString(16)}`,
+                    },
+                );
+            }
+
+            if (!response) {
+                throw new Error('Unsupported network request');
+            }
+
+            await web3wallet.respondSessionRequest({
+                topic: networkRequestEvent.topic,
+                response,
+            });
+            networkRequestModal.current?.hide();
+            resetNetworkRequestState();
+        } catch (error) {
+            console.error('Network request approval failed:', error);
+            CommonAlert.show({
+                title: t('alert.error'),
+                message: error.message || t('walletconnect.request_approval_error'),
+                type: 'error',
+            });
+        } finally {
+            CommonLoading.hide();
+        }
+    }, [networkRequestEvent, resetNetworkRequestState, t]);
+
+    const onRejectNetworkRequest = useCallback(async () => {
+        if (!networkRequestEvent) {
+            return;
+        }
+        try {
+            CommonLoading.show();
+            const response = rejectEIP155Request(networkRequestEvent);
+            await web3wallet.respondSessionRequest({
+                topic: networkRequestEvent.topic,
+                response,
+            });
+            networkRequestModal.current?.hide();
+            resetNetworkRequestState();
+        } catch (error) {
+            console.error('Network request rejection failed:', error);
+            CommonAlert.show({
+                title: t('alert.error'),
+                message: t('walletconnect.request_rejection_error'),
+                type: 'error',
+            });
+        } finally {
+            CommonLoading.hide();
+        }
+    }, [networkRequestEvent, resetNetworkRequestState, t]);
+
     // Pair with WalletConnect URI
     const pair = useCallback(
         async wcUri => {
@@ -372,7 +547,7 @@ export default function DAppsDetailScreen({ navigation, route }) {
                 throw error;
             }
         },
-        [t],
+        [handleChainManagementRequest, handlePassiveRequest, onRejectRequest, t],
     );
 
     // Handle session proposal
@@ -425,8 +600,13 @@ export default function DAppsDetailScreen({ navigation, route }) {
             setRequestSession(session);
             setRequestEventData(requestEvent);
 
-            if (PASSIVE_METHODS.includes(request.method)) {
-                await handleAutoApproveRequest(requestEvent);
+            if (CHAIN_MANAGEMENT_METHODS.includes(request.method)) {
+                handleChainManagementRequest(requestEvent, session);
+                return;
+            }
+
+            if (AUTO_APPROVED_METHODS.includes(request.method)) {
+                await handlePassiveRequest(requestEvent);
                 return;
             }
 
@@ -793,6 +973,60 @@ export default function DAppsDetailScreen({ navigation, route }) {
                         />
                     </View>
                 </View>
+            </ActionSheet>
+            <ActionSheet
+                ref={networkRequestModal}
+                headerAlwaysVisible
+                isModal={Platform.OS === 'android'}
+                useBottomSafeAreaPadding
+                containerStyle={[styles.sessionRequestContainer, { backgroundColor: theme.background4 }]}
+            >
+                <SafeAreaView>
+                    <View style={styles.titleContainer}>
+                        <CommonText style={{ fontWeight: 'bold', fontSize: 17 }}>
+                            {networkRequestInfo?.dappName || 'Unknown DApp'}
+                        </CommonText>
+                        {!!networkRequestInfo?.dappUrl && (
+                            <CommonText>{networkRequestInfo.dappUrl}</CommonText>
+                        )}
+                        <CommonText>
+                            {networkRequestInfo?.type === 'switch'
+                                ? 'Network switch requested'
+                                : 'Add network requested'}
+                        </CommonText>
+                    </View>
+                    <View style={styles.contentContainer}>
+                        <CommonText>{`Chain ID: ${networkRequestInfo?.chainId ?? 'Unknown'}`}</CommonText>
+                        <CommonText>{`Chain Key: ${networkRequestInfo?.chainKey ?? 'Unknown'}`}</CommonText>
+                        {networkRequestInfo?.params?.chainName && (
+                            <CommonText>{`Name: ${networkRequestInfo.params.chainName}`}</CommonText>
+                        )}
+                        {networkRequestInfo?.params?.nativeCurrency?.symbol && (
+                            <CommonText>{`Currency: ${networkRequestInfo.params.nativeCurrency.symbol}`}</CommonText>
+                        )}
+                        {networkRequestInfo?.params?.rpcUrls?.length ? (
+                            <CommonText numberOfLines={2} style={{ textAlign: 'center' }}>
+                                {`RPC: ${networkRequestInfo.params.rpcUrls[0]}`}
+                            </CommonText>
+                        ) : null}
+                    </View>
+                    <View style={styles.buttonContainer}>
+                        <View style={styles.haftButton}>
+                            <CommonButton
+                                text={t('approve')}
+                                onPress={onApproveNetworkRequest}
+                                style={[styles.button, { backgroundColor: theme.longColor }]}
+                            />
+                        </View>
+                        <View style={styles.haftButton}>
+                            <CommonButton
+                                text={t('reject')}
+                                style={[styles.button, { backgroundColor: theme.text3 }]}
+                                onPress={onRejectNetworkRequest}
+                            />
+                        </View>
+                    </View>
+                </SafeAreaView>
             </ActionSheet>
         </SafeAreaView>
     );
