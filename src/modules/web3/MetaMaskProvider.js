@@ -27,6 +27,10 @@ class MetaMaskWeb3Provider {
         this.requestCallback = callback;
     }
 
+    clearRequestCallback() {
+        this.requestCallback = null;
+    }
+
     setCurrentChain(chain) {
         this.currentChain = chain;
         walletConnectionProvider.setCurrentChain(chain);
@@ -95,8 +99,15 @@ class MetaMaskWeb3Provider {
                     return this.getAccounts();
                 });
             case 'wallet_switchEthereumChain':
-                return this.requestUserApproval(requestData, async () => null);
+                return this.requestUserApproval(requestData, async () => {
+                    await this.switchChain(params);
+                    return null;
+                });
             case 'wallet_addEthereumChain':
+                return this.requestUserApproval(requestData, async () => {
+                    await this.addChain(params[0] || params);
+                    return null;
+                });
             case 'wallet_showAlert':
             case 'wallet_showConfirm':
                 return this.requestUserApproval(requestData, async () => true);

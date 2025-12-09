@@ -64,24 +64,47 @@ export default function DAppsDetailScreen({navigation, route}) {
     const [uri, setUri] = useState('');
     const dispatch = useDispatch();
     useEffect(() => {
+        let isMounted = true;
+        let proposalListener;
+        let requestListener;
+
         (async () => {
             await createWeb3Wallet();
-            
-            // Set up direct event listeners for WalletConnect
-            // Note: We handle these directly instead of using WalletConnectSessionManager
-            // to avoid conflicts and ensure proper popup display
-            web3wallet.on('session_proposal', onSessionProposal);
-            web3wallet.on('session_request', onSessionRequest);
-            web3wallet.on('session_delete', onSessionDelete);
-            
+            if (!web3wallet) {
+                return;
+            }
+
+            proposalListener = proposal => {
+                if (!isMounted) {
+                    return;
+                }
+                onSessionProposal(proposal);
+            };
+
+            requestListener = requestEvent => {
+                if (!isMounted) {
+                    return;
+                }
+                onSessionRequest(requestEvent);
+            };
+
+            web3wallet.on('session_proposal', proposalListener);
+            web3wallet.on('session_request', requestListener);
+
             // Setup Web3 provider request callback
-            metaMaskWeb3Provider.setRequestCallback(async (requestInfo) => {
-                console.log('🔌 Web3 request callback triggered:', requestInfo.requestData.method);
-                console.log('🔌 DApp info:', { name: item.name, url: item.url });
-                
+            metaMaskWeb3Provider.setRequestCallback(async requestInfo => {
+                if (!isMounted) {
+                    return;
+                }
+                console.log(
+                    '🔌 Web3 request callback triggered:',
+                    requestInfo.requestData.method,
+                );
+                console.log('🔌 DApp info:', {name: item.name, url: item.url});
+
                 // Handle different types of requests
                 const method = requestInfo.requestData.method;
-                
+
                 if (method === 'eth_accounts') {
                     // Handle eth_accounts automatically without showing modal
                     console.log('🔌 Handling eth_accounts automatically');
@@ -95,52 +118,88 @@ export default function DAppsDetailScreen({navigation, route}) {
                     }
                 } else if (method === 'eth_requestAccounts') {
                     // Show confirmation modal for eth_requestAccounts (connection request)
-                    console.log('🔌 Showing confirmation modal for eth_requestAccounts');
+                    console.log(
+                        '🔌 Showing confirmation modal for eth_requestAccounts',
+                    );
+                    if (!isMounted) {
+                        return;
+                    }
                     setWeb3RequestData(requestInfo.requestData);
                     setWeb3RequestCallbacks({
-                        onApprove: async (data) => {
+                        onApprove: async data => {
                             const result = await requestInfo.onApprove(data);
                             return result;
                         },
-                        onReject: requestInfo.onReject
+                        onReject: requestInfo.onReject,
                     });
                     setShowWeb3RequestModal(true);
-                } else if (method === 'wallet_showAlert' || method === 'wallet_showConfirm') {
+                } else if (
+                    method === 'wallet_showAlert' ||
+                    method === 'wallet_showConfirm'
+                ) {
                     // Show alert/confirm in Web3RequestModal
-                    console.log('🔌 Setting up alert/confirm modal for method:', method);
+                    console.log(
+                        '🔌 Setting up alert/confirm modal for method:',
+                        method,
+                    );
                     console.log('🔌 Request data:', requestInfo.requestData);
+                    if (!isMounted) {
+                        return;
+                    }
                     setWeb3RequestData(requestInfo.requestData);
                     setWeb3RequestCallbacks({
                         onApprove: requestInfo.onApprove,
-                        onReject: requestInfo.onReject
+                        onReject: requestInfo.onReject,
                     });
                     console.log('🔌 Setting Web3RequestModal visibility to TRUE');
                     setShowWeb3RequestModal(true);
                     console.log('🔌 Web3RequestModal visibility should now be TRUE');
                 } else if (method === 'eth_sendTransaction') {
                     // Show SmartContractCallModal for transactions
+                    if (!isMounted) {
+                        return;
+                    }
                     setSmartContractTransaction(requestInfo.requestData);
                     setShowSmartContractModal(true);
                 } else {
                     // Show Web3RequestModal for other requests
+                    if (!isMounted) {
+                        return;
+                    }
                     setWeb3RequestData(requestInfo.requestData);
                     setWeb3RequestCallbacks({
                         onApprove: requestInfo.onApprove,
-                        onReject: requestInfo.onReject
+                        onReject: requestInfo.onReject,
                     });
                     setShowWeb3RequestModal(true);
                 }
-                
+
                 console.log('🔌 Modal should be showing now');
             });
         })();
         CommonLoading.hide();
-    }, []);
+        return () => {
+            isMounted = false;
+            if (proposalListener && web3wallet?.off) {
+                web3wallet.off('session_proposal', proposalListener);
+            }
+            if (requestListener && web3wallet?.off) {
+                web3wallet.off('session_request', requestListener);
+            }
+            metaMaskWeb3Provider.clearRequestCallback();
+        };
+    }, [item.name, item.url, onSessionProposal, onSessionRequest]);
     useEffect(() => {
-        (async () => {
-            web3wallet.on('session_delete', onSessionDelete);
-        })();
-    }, [uri]);
+        if (!web3wallet) {
+            return;
+        }
+        web3wallet.on('session_delete', onSessionDelete);
+        return () => {
+            if (web3wallet?.off) {
+                web3wallet.off('session_delete', onSessionDelete);
+            }
+        };
+    }, [uri, onSessionDelete]);
     const injectedJavaScriptIos = `
           //window.localStorage.clear();
           var open = false;
@@ -837,25 +896,26 @@ export default function DAppsDetailScreen({navigation, route}) {
 
     const availableNetworks = ['ETH', 'BSC', 'POLYGON', 'ARB', 'BTTC'];
 
-    const handleNetworkSwitch = async (newChain) => {
+    const handleNetworkSwitch = async newChain => {
         try {
             console.log('🔌 Switching network from', activeChain, 'to', newChain);
-            
-            // Update the MetaMaskWeb3Provider's current chain
+
             metaMaskWeb3Provider.setCurrentChain(newChain);
+            await metaMaskWeb3Provider.ensureWallet(newChain);
             setActiveChain(newChain);
-            
-            // Send chain change notification to WebView
-            webRef.current?.postMessage(JSON.stringify({
-                type: 'chain_changed',
-                chainId: metaMaskWeb3Provider.getChainIdFromName(newChain),
-                chainName: newChain,
-                timestamp: Date.now()
-            }));
-            
+
+            webRef.current?.postMessage(
+                JSON.stringify({
+                    type: 'chain_changed',
+                    chainId: metaMaskWeb3Provider.getChainIdFromName(newChain),
+                    chainName: newChain,
+                    timestamp: Date.now(),
+                }),
+            );
+
             console.log('🔌 Network switched successfully to:', newChain);
             setShowNetworkModal(false);
-            
+
             CommonAlert.show({
                 title: 'Network Switched',
                 message: `Switched to ${getNetworkDisplayName(newChain)} network`,

@@ -17,6 +17,7 @@ import {StorageService} from '@modules/core/storage/StorageService';
 import {Logs} from '@modules/core/log/logs';
 import {PriceService} from '@persistence/price/PriceService';
 import ReduxStore from '@modules/redux/ReduxStore';
+import {applicationProperties} from '@src/application.properties';
 
 export const WalletService = {
     insert,
@@ -32,6 +33,32 @@ export const WalletService = {
     getActiveWallet,
 };
 
+async function hydrateWalletAssets(wallet) {
+    if (!wallet) {
+        return {coins: [], tokens: []};
+    }
+    const coins = wallet.coins || [];
+    const tokens = wallet.tokens || [];
+    const derivationTargets = [...coins, ...tokens];
+
+    if (wallet.mnemonic) {
+        return await WalletFactory.fromMnemonic(
+            derivationTargets,
+            wallet.mnemonic,
+        );
+    }
+    if (wallet.privateKey) {
+        return await WalletFactory.fromPrivateKey(
+            derivationTargets,
+            wallet.privateKey,
+        );
+    }
+    return {
+        coins,
+        tokens,
+    };
+}
+
 async function insert({
     name,
     type,
@@ -45,41 +72,54 @@ async function insert({
 }) {
     try {
         const walletListData = await StorageService.getItem(WALLET_LIST_KEY);
-        const walletList = walletListData ? walletListData.wallets : [];
-        let coins,
-            tokens = [];
-        if (mnemonic) {
-            const walletData = await WalletFactory.fromMnemonic(
-                [...coinsParam, ...tokenParam],
-                mnemonic,
-            );
-            coins = walletData.coins;
-            tokens = walletData.tokens;
-        } else if (privateKey) {
-            if (!_.isString(privateKey)){
-                privateKey = privateKey.toString();
-            }
+        const walletList = walletListData?.wallets
+            ? [...walletListData.wallets]
+            : [];
 
-            const walletData = await WalletFactory.fromPrivateKey(
-                [...coinsParam, ...tokenParam],
-                privateKey,
-            );
-            coins = walletData.coins;
-            tokens = walletData.tokens;
+        const baseCoins = _.cloneDeep(coinsParam || DEFAULT_WALLET.coins || []);
+        const baseTokens = _.cloneDeep(
+            tokenParam || DEFAULT_WALLET.tokens || [],
+        );
+
+        const derivationTargets = [...baseCoins, ...baseTokens];
+
+        if (!mnemonic && !privateKey) {
+            throw new Error('A mnemonic or private key is required.');
         }
-        const activeAsset = _.find(coins, {id: 'ethereum'});
+
+        const normalizedPrivateKey =
+            privateKey && !_.isString(privateKey)
+                ? privateKey.toString()
+                : privateKey;
+
+        const walletData = mnemonic
+            ? await WalletFactory.fromMnemonic(derivationTargets, mnemonic)
+            : await WalletFactory.fromPrivateKey(
+                  derivationTargets,
+                  normalizedPrivateKey,
+              );
+
+        const coins = walletData?.coins || walletData?.wallets || [];
+        const tokens = walletData?.tokens || [];
+
+        if (!coins.length) {
+            throw new Error('Failed to derive wallet addresses.');
+        }
+
+        const activeAsset =
+            _.find(coins, {id: 'ethereum'}) || _.first(coins) || null;
         const wallet = {
             id: moment().format('YYYYMMDDhhmmss'),
-            name: name,
-            type: type,
+            name: name || applicationProperties.defaultWalletName,
+            type: type || DEFAULT_WALLET.type,
             logoUri: logoURI,
-            defaultChain: defaultChain,
+            defaultChain: defaultChain || DEFAULT_WALLET.defaultChain,
             mnemonic: mnemonic,
-            coins: coins,
+            coins,
             totalBalance: 0.0,
-            activeAsset: activeAsset,
-            tokens: tokens,
-            chain,
+            activeAsset,
+            tokens,
+            chain: chain || DEFAULT_WALLET.chain,
         };
         walletList.push(wallet);
         await StorageService.setItem(WALLET_LIST_KEY, {
@@ -97,7 +137,7 @@ async function insert({
         Logs.info('WalletService: insert' + error);
         return {
             success: false,
-            data: {},
+            data: error?.message || {},
         };
     }
 }
@@ -158,12 +198,13 @@ async function remove(wallet) {
 async function setActiveWallet(wallet) {
     try {
         const {wallets} = await StorageService.getItem(WALLET_LIST_KEY);
-        const {coins, tokens} = await WalletFactory.fromMnemonic(
-            [...wallet.coins, ...wallet.tokens],
-            wallet.mnemonic,
-        );
-        wallet.coins = coins;
-        wallet.tokens = tokens;
+        const hydrated = await hydrateWalletAssets(wallet);
+        if (hydrated?.coins?.length) {
+            wallet.coins = hydrated.coins;
+        }
+        if (hydrated?.tokens) {
+            wallet.tokens = hydrated.tokens;
+        }
         await StorageService.setItem(WALLET_LIST_KEY, {
             wallets: wallets,
             activeWallet: wallet,
@@ -183,14 +224,21 @@ async function setActiveWallet(wallet) {
 
 async function findAll() {
     try {
-        const walletData = await StorageService.getItem(WALLET_LIST_KEY);
+        const walletData =
+            (await StorageService.getItem(WALLET_LIST_KEY)) || {
+                wallets: [],
+                activeWallet: null,
+            };
         const activeWallet = walletData.activeWallet;
-        const {coins, tokens} = await WalletFactory.fromPrivateKey([
-            ...activeWallet.coins,
-            ...activeWallet.tokens,
-        ]);
-        activeWallet.coins = coins;
-        activeWallet.tokens = tokens;
+        if (activeWallet) {
+            const hydrated = await hydrateWalletAssets(activeWallet);
+            if (hydrated?.coins?.length) {
+                activeWallet.coins = hydrated.coins;
+            }
+            if (hydrated?.tokens) {
+                activeWallet.tokens = hydrated.tokens;
+            }
+        }
         return {
             success: true,
             data: {

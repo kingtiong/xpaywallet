@@ -10,7 +10,7 @@ import {
     Dimensions,
     Animated,
 } from 'react-native';
-import { useSelector, useDispatch } from 'react-redux';
+import { useSelector } from 'react-redux';
 import CommonText from '@components/commons/CommonText';
 import CommonButton from '@components/commons/CommonButton';
 import CommonImage from '@components/commons/CommonImage';
@@ -30,13 +30,12 @@ const SmartContractCallModal = ({
     dappInfo,
 }) => {
     const { theme } = useSelector(state => state.ThemeReducer);
-    const { wallets } = useSelector(state => state.WalletReducer);
-    const dispatch = useDispatch();
+    const { activeWallet } = useSelector(state => state.WalletReducer);
 
     const [loading, setLoading] = useState(false);
-    const [balance, setBalance] = useState('0.00');
-    const [networkFee, setNetworkFee] = useState('0.00');
-    const [totalCost, setTotalCost] = useState('0.00');
+    const [balance, setBalance] = useState(0);
+    const [networkFee, setNetworkFee] = useState(0);
+    const [totalCost, setTotalCost] = useState(0);
     const [insufficientBalance, setInsufficientBalance] = useState(false);
     const [currentWallet, setCurrentWallet] = useState(null);
     const [currentChain, setCurrentChain] = useState('BSC');
@@ -53,27 +52,24 @@ const SmartContractCallModal = ({
         try {
             setLoading(true);
             
-            // Get current wallet and chain
-            const activeWallet = wallets.find(w => w.isActive) || wallets[0];
-            if (!activeWallet) {
+            const walletForTx = activeWallet;
+            if (!walletForTx || Object.keys(walletForTx).length === 0) {
                 console.error('No active wallet found');
                 return;
             }
-            setCurrentWallet(activeWallet);
+            setCurrentWallet(walletForTx);
             
-            // Determine chain from transaction data or use activeChain from props
             const chain = determineChain(transactionData);
             setCurrentChain(chain);
 
-            // Get wallet balance
-            await fetchWalletBalance(activeWallet, chain);
-            
-            // Calculate network fee
-            await calculateNetworkFee(transactionData, chain);
-            
-            // Check if balance is sufficient
-            checkBalanceSufficiency();
-            
+            const walletBalance = fetchWalletBalance(walletForTx, chain);
+            setBalance(walletBalance);
+
+            const feeValue = await calculateNetworkFee(transactionData, chain);
+            setNetworkFee(feeValue);
+
+            checkBalanceSufficiency(walletBalance, feeValue, transactionData);
+
         } catch (error) {
             console.error('Error initializing transaction data:', error);
             Alert.alert('Error', 'Failed to load transaction data');
@@ -83,7 +79,7 @@ const SmartContractCallModal = ({
     };
 
     const determineChain = (txData) => {
-        if (txData.chainId) {
+        if (txData?.chainId) {
             const chainMap = {
                 '0x1': 'ETH',
                 '0x38': 'BSC', 
@@ -91,46 +87,42 @@ const SmartContractCallModal = ({
             };
             return chainMap[txData.chainId] || 'BSC';
         }
-        return 'BSC'; // Default to BSC
+        if (txData?.chain) {
+            return txData.chain.toUpperCase();
+        }
+        return walletConnectionProvider.getCurrentChain() || 'BSC';
     };
 
-    const fetchWalletBalance = async (wallet, chain) => {
-        try {
-            // Get the active asset for the chain
-            const activeAsset = wallet.activeAsset || wallet.coins?.find(coin => coin.chain === chain);
-            if (!activeAsset) {
-                console.error('No active asset found for chain:', chain);
-                setBalance('0.00');
-                return;
-            }
-
-            const walletInstance = await WalletFactory.getWallet(chain);
-            if (walletInstance) {
-                const balance = await walletInstance.getBalance(activeAsset.walletAddress);
-                const formattedBalance = ethers.utils.formatEther(balance);
-                setBalance(parseFloat(formattedBalance).toFixed(4));
-            }
-        } catch (error) {
-            console.error('Error fetching balance:', error);
-            setBalance('0.00');
+    const fetchWalletBalance = (wallet, chain) => {
+        const activeAsset =
+            wallet?.coins?.find(coin => coin.chain === chain) ||
+            wallet?.tokens?.find(token => token.chain === chain) ||
+            wallet?.activeAsset;
+        if (!activeAsset) {
+            console.error('No active asset found for chain:', chain);
+            return 0;
         }
+        const balanceValue = Number(activeAsset.balance) || 0;
+        return Number.isFinite(balanceValue) ? balanceValue : 0;
     };
 
     const calculateNetworkFee = async (txData, chain) => {
         try {
-            const walletInstance = await WalletFactory.getWallet(chain);
-            if (walletInstance && txData.gasPrice && txData.gasLimit) {
-                const fee = ethers.BigNumber.from(txData.gasPrice).mul(txData.gasLimit);
-                const feeInEth = ethers.utils.formatEther(fee);
-                setNetworkFee(parseFloat(feeInEth).toFixed(6));
+            const gasPrice = txData?.gasPrice || txData?.maxFeePerGas;
+            const gasLimit = txData?.gasLimit || txData?.gas;
+            if (gasPrice && gasLimit) {
+                const fee = ethers.BigNumber.from(gasPrice).mul(
+                    ethers.BigNumber.from(gasLimit),
+                );
+                const feeInEth = parseFloat(ethers.utils.formatEther(fee));
+                return Number.isFinite(feeInEth) ? feeInEth : 0;
             } else {
-                // Estimate fee if not provided
                 const estimatedFee = await estimateGasFee(txData, chain);
-                setNetworkFee(estimatedFee);
+                return estimatedFee;
             }
         } catch (error) {
             console.error('Error calculating network fee:', error);
-            setNetworkFee('0.00');
+            return 0;
         }
     };
 
@@ -142,29 +134,35 @@ const SmartContractCallModal = ({
                 data: txData.data || '0x',
             });
             
-            if (feeData.success) {
-                return parseFloat(feeData.data.estimateGas.ether).toFixed(6);
+            if (feeData?.success) {
+                const estimated =
+                    parseFloat(feeData.data.estimateGas.ether) || 0;
+                return Number.isFinite(estimated) ? estimated : 0;
             }
-            return '0.00';
+            return 0;
         } catch (error) {
             console.error('Error estimating gas fee:', error);
-            return '0.00';
+            return 0;
         }
     };
 
-    const checkBalanceSufficiency = () => {
-        const balanceNum = parseFloat(balance);
-        const feeNum = parseFloat(networkFee);
-        const valueNum = parseFloat(ethers.utils.formatEther(transactionData.value || '0'));
-        
-        const totalRequired = feeNum + valueNum;
-        setTotalCost(totalRequired.toFixed(6));
-        
-        if (balanceNum < totalRequired) {
-            setInsufficientBalance(true);
-        } else {
-            setInsufficientBalance(false);
+    const checkBalanceSufficiency = (walletBalance, feeValue, txData) => {
+        let valueInEth = 0;
+        try {
+            if (txData?.value) {
+                valueInEth = parseFloat(
+                    ethers.utils.formatEther(
+                        ethers.BigNumber.from(txData.value),
+                    ),
+                );
+            }
+        } catch (error) {
+            console.error('Unable to parse transaction value', error);
         }
+
+        const totalRequired = (valueInEth || 0) + (feeValue || 0);
+        setTotalCost(totalRequired);
+        setInsufficientBalance(walletBalance < totalRequired);
     };
 
     const handleApprove = async () => {
@@ -314,10 +312,10 @@ const SmartContractCallModal = ({
                                 />
                                 <View style={styles.balanceInfo}>
                                     <CommonText style={[styles.balanceAmount, { color: theme.text1 }]}>
-                                        ${balance}
+                                        ${balance.toFixed(4)}
                                     </CommonText>
                                     <CommonText style={[styles.balanceUsd, { color: theme.text2 }]}>
-                                        {balance} {currentChain}
+                                        {balance.toFixed(4)} {currentChain}
                                     </CommonText>
                                 </View>
                             </View>
@@ -367,11 +365,11 @@ const SmartContractCallModal = ({
                                             style={styles.feeChainIcon}
                                         />
                                         <CommonText style={[styles.feeAmount, { color: theme.text1 }]}>
-                                            ${networkFee}
+                                            ${networkFee.toFixed(6)}
                                         </CommonText>
                                     </View>
                                     <CommonText style={[styles.feeAmountToken, { color: theme.text2 }]}>
-                                        {networkFee} {currentChain}
+                                        {networkFee.toFixed(6)} {currentChain}
                                     </CommonText>
                                 </View>
                             </View>
@@ -415,7 +413,7 @@ const SmartContractCallModal = ({
                                 Total cost
                             </CommonText>
                             <CommonText style={[styles.totalCostAmount, { color: theme.text1 }]}>
-                                ${totalCost}
+                                ${totalCost.toFixed(6)}
                             </CommonText>
                         </View>
                         
