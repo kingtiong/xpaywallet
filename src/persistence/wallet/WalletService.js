@@ -33,6 +33,32 @@ export const WalletService = {
     getActiveWallet,
 };
 
+async function hydrateWalletAssets(wallet) {
+    if (!wallet) {
+        return {coins: [], tokens: []};
+    }
+    const coins = wallet.coins || [];
+    const tokens = wallet.tokens || [];
+    const derivationTargets = [...coins, ...tokens];
+
+    if (wallet.mnemonic) {
+        return await WalletFactory.fromMnemonic(
+            derivationTargets,
+            wallet.mnemonic,
+        );
+    }
+    if (wallet.privateKey) {
+        return await WalletFactory.fromPrivateKey(
+            derivationTargets,
+            wallet.privateKey,
+        );
+    }
+    return {
+        coins,
+        tokens,
+    };
+}
+
 async function insert({
     name,
     type,
@@ -172,12 +198,13 @@ async function remove(wallet) {
 async function setActiveWallet(wallet) {
     try {
         const {wallets} = await StorageService.getItem(WALLET_LIST_KEY);
-        const {coins, tokens} = await WalletFactory.fromMnemonic(
-            [...wallet.coins, ...wallet.tokens],
-            wallet.mnemonic,
-        );
-        wallet.coins = coins;
-        wallet.tokens = tokens;
+        const hydrated = await hydrateWalletAssets(wallet);
+        if (hydrated?.coins?.length) {
+            wallet.coins = hydrated.coins;
+        }
+        if (hydrated?.tokens) {
+            wallet.tokens = hydrated.tokens;
+        }
         await StorageService.setItem(WALLET_LIST_KEY, {
             wallets: wallets,
             activeWallet: wallet,
@@ -197,14 +224,21 @@ async function setActiveWallet(wallet) {
 
 async function findAll() {
     try {
-        const walletData = await StorageService.getItem(WALLET_LIST_KEY);
+        const walletData =
+            (await StorageService.getItem(WALLET_LIST_KEY)) || {
+                wallets: [],
+                activeWallet: null,
+            };
         const activeWallet = walletData.activeWallet;
-        const {coins, tokens} = await WalletFactory.fromPrivateKey([
-            ...activeWallet.coins,
-            ...activeWallet.tokens,
-        ]);
-        activeWallet.coins = coins;
-        activeWallet.tokens = tokens;
+        if (activeWallet) {
+            const hydrated = await hydrateWalletAssets(activeWallet);
+            if (hydrated?.coins?.length) {
+                activeWallet.coins = hydrated.coins;
+            }
+            if (hydrated?.tokens) {
+                activeWallet.tokens = hydrated.tokens;
+            }
+        }
         return {
             success: true,
             data: {

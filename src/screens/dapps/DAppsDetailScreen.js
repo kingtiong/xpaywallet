@@ -896,25 +896,26 @@ export default function DAppsDetailScreen({navigation, route}) {
 
     const availableNetworks = ['ETH', 'BSC', 'POLYGON', 'ARB', 'BTTC'];
 
-    const handleNetworkSwitch = async (newChain) => {
+    const handleNetworkSwitch = async newChain => {
         try {
             console.log('🔌 Switching network from', activeChain, 'to', newChain);
-            
-            // Update the MetaMaskWeb3Provider's current chain
+
             metaMaskWeb3Provider.setCurrentChain(newChain);
+            await metaMaskWeb3Provider.ensureWallet(newChain);
             setActiveChain(newChain);
-            
-            // Send chain change notification to WebView
-            webRef.current?.postMessage(JSON.stringify({
-                type: 'chain_changed',
-                chainId: metaMaskWeb3Provider.getChainIdFromName(newChain),
-                chainName: newChain,
-                timestamp: Date.now()
-            }));
-            
+
+            webRef.current?.postMessage(
+                JSON.stringify({
+                    type: 'chain_changed',
+                    chainId: metaMaskWeb3Provider.getChainIdFromName(newChain),
+                    chainName: newChain,
+                    timestamp: Date.now(),
+                }),
+            );
+
             console.log('🔌 Network switched successfully to:', newChain);
             setShowNetworkModal(false);
-            
+
             CommonAlert.show({
                 title: 'Network Switched',
                 message: `Switched to ${getNetworkDisplayName(newChain)} network`,
