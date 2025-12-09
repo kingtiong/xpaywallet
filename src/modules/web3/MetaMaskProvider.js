@@ -27,6 +27,10 @@ class MetaMaskWeb3Provider {
         this.requestCallback = callback;
     }
 
+    clearRequestCallback() {
+        this.requestCallback = null;
+    }
+
     setCurrentChain(chain) {
         this.currentChain = chain;
         walletConnectionProvider.setCurrentChain(chain);

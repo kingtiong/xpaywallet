@@ -48,12 +48,32 @@ export default function WalletSendScreen({navigation}) {
     const actionSheetRef = useRef(null);
     const actionCamera = useRef(null);
     const [refreshing, setRefreshing] = useState(false);
-    const [gasFee, setGasFee] = useState({
+    const [gasFee] = useState({
         BSC: 0.0006,
         ETH: 0.001,
         POLYGON: 0.03,
     });
     const [mxgPrice, setMXGPrice] = useState(null);
+    const parseAmount = raw => {
+        const numeric =
+            typeof raw === 'string' ? parseFloat(raw) : Number(raw);
+        return Number.isFinite(numeric) ? numeric : 0;
+    };
+    const getActiveAssetPrice = () => {
+        const assetId = activeWallet?.activeAsset?.id?.toLowerCase() || '';
+        if (assetId === 'xusdt' || assetId === 'usdt') {
+            return 1;
+        }
+        if (assetId === 'mxg' && Number.isFinite(mxgPrice)) {
+            return mxgPrice;
+        }
+        return prices?.[activeWallet?.activeAsset?.id]?.[0] || 0;
+    };
+    const estimatedGasEther = parseAmount(
+        estimatedGasFee?.estimateGas?.ether,
+    );
+    const gasDisplayValue =
+        estimatedGasEther > 0 ? estimatedGasEther * 2 : 0;
 
     useEffect(() => {
         const fetchPrice = async () => {
@@ -82,28 +102,33 @@ export default function WalletSendScreen({navigation}) {
         });
     };
     const reset = () => {
-        setToFiat('');
+        setToFiat(0);
         setValue('');
         setEstimatedGasFee({});
         setServiceFee(0);
-        setDestination(0);
+        setDestination('');
         dispatch(WalletAction.balance());
     };
     const initMaxAmount = () => {
-        let max = activeWallet.activeAsset.balance;
-        let makerFee = 1;
-        let makerAmount = (activeWallet.activeAsset.balance * makerFee) / 100;
+        const balance = parseAmount(activeWallet.activeAsset.balance);
+        const makerFeeRate = 1;
+        let max = balance;
+        const makerAmount = (balance * makerFeeRate) / 100;
+        const chainFee =
+            gasFee[activeWallet.activeAsset.chain] !== undefined
+                ? gasFee[activeWallet.activeAsset.chain]
+                : 0;
         if (activeWallet.activeAsset.type === ASSET_TYPE_TOKEN) {
             max -= makerAmount;
         } else {
-            max = max - makerAmount - gasFee[activeWallet.activeAsset.chain];
+            max = max - makerAmount - chainFee;
         }
         setMaxAmount(max > 0 ? max.toString() : '');
     };
-    const getServiceFee = async balance => {
+    const getServiceFee = amount => {
         if (fee?.enabled === true) {
-            let makerFee = fee?.rate;
-            return (balance * makerFee * 0) / 100;
+            const makerFee = Number(fee?.rate) || 0;
+            return (amount * makerFee) / 100;
         }
         return 0;
     };
@@ -122,7 +147,9 @@ export default function WalletSendScreen({navigation}) {
         await prepareTx();
     };
     const prepareTx = async () => {
-        if (!value || !destination) {
+        const trimmedDestination = destination.trim();
+        const amount = parseAmount(value);
+        if (!amount || !trimmedDestination) {
             CommonAlert.show({
                 title: t('alert.error'),
                 message: t('please_fill'),
@@ -130,7 +157,7 @@ export default function WalletSendScreen({navigation}) {
             });
             return;
         }
-        if (value <= 0) {
+        if (amount <= 0) {
             CommonAlert.show({
                 title: t('alert.error'),
                 message: t('insufficient_fund'),
@@ -138,12 +165,22 @@ export default function WalletSendScreen({navigation}) {
             });
             return;
         }
+        const balance = parseAmount(activeWallet.activeAsset.balance);
+        if (amount > balance) {
+            CommonAlert.show({
+                title: t('alert.error'),
+                message: t('insufficient_fund'),
+                type: 'error',
+            });
+            return;
+        }
+        setDestination(trimmedDestination);
         try {
             CommonLoading.show();
             const tx = {
                 from: activeWallet.activeAsset.walletAddress,
-                to: destination,
-                value: value,
+                to: trimmedDestination,
+                value: amount,
             };
             if (activeWallet.activeAsset.type === ASSET_TYPE_TOKEN) {
                 tx.tokenContractAddress = activeWallet.activeAsset.contract;
@@ -162,7 +199,7 @@ export default function WalletSendScreen({navigation}) {
                 return;
             }
             setEstimatedGasFee(data);
-            const makerFee = await getServiceFee(value);
+            const makerFee = getServiceFee(amount);
             setServiceFee(makerFee);
             actionSheetRef.current?.show();
         } catch (error) {
@@ -180,13 +217,14 @@ export default function WalletSendScreen({navigation}) {
         actionSheetRef.current?.hide();
         try {
             CommonLoading.show();
+            const amount = parseAmount(value);
             const tx = {
-                to: destination,
-                value: value,
+                to: destination.trim(),
+                value: amount,
             };
             console.log('TX object:', tx);
             if (fee?.enabled === true) {
-                tx.takerFee = fee.rate;
+                tx.takerFee = Number(fee.rate) || 0;
                 tx.takerAddress = fee.address;
             }
             if (activeWallet.activeAsset.type === ASSET_TYPE_TOKEN) {
@@ -338,22 +376,8 @@ export default function WalletSendScreen({navigation}) {
                                     }
                                     onChangeText={v => {
                                         setValue(v);
-                                        setToFiat(
-                                            v *
-                                                (activeWallet.activeAsset.id.toLowerCase() ===
-                                                'xusdt'
-                                                    ? 1
-                                                    : activeWallet.activeAsset.id.toLowerCase() ===
-                                                      'usdt'
-                                                    ? 1
-                                                    : activeWallet.activeAsset.id.toLowerCase() ===
-                                                      'mxg'
-                                                    ? mxgPrice
-                                                    : prices[
-                                                          activeWallet
-                                                              .activeAsset.id
-                                                      ][0]),
-                                        );
+                                        const amountNumber = parseAmount(v);
+                                        setToFiat(amountNumber * getActiveAssetPrice());
                                     }}
                                     keyboardType="numeric"
                                     numberOfLines={1}
@@ -367,12 +391,8 @@ export default function WalletSendScreen({navigation}) {
                                     style={styles.moreBtn2}
                                     onPress={async () => {
                                         setValue(maxAmount);
-                                        setToFiat(
-                                            parseFloat(maxAmount) *
-                                                prices[
-                                                    activeWallet.activeAsset.id
-                                                ][0],
-                                        );
+                                        const amountNumber = parseAmount(maxAmount);
+                                        setToFiat(amountNumber * getActiveAssetPrice());
                                     }}>
                                     <CommonText
                                         style={[
@@ -475,8 +495,7 @@ export default function WalletSendScreen({navigation}) {
                                                 activeWallet.activeAsset.chain
                                             ]
                                         }>
-                                        {estimatedGasFee?.estimateGas?.ether *
-                                            2}
+                                        {gasDisplayValue}
                                     </Balance>
                                 </View>
                                 <View style={styles.confirmTxItem}>
@@ -493,12 +512,9 @@ export default function WalletSendScreen({navigation}) {
                                                         .chain
                                                 ]
                                             }>
-                                            {parseFloat(
-                                                estimatedGasFee?.estimateGas
-                                                    ?.ether * 2,
-                                            ) +
-                                                parseFloat(value) +
-                                                parseFloat(serviceFee)}
+                                            {gasDisplayValue +
+                                                parseAmount(value) +
+                                                parseAmount(serviceFee)}
                                         </Balance>
                                     )}
                                     {activeWallet.activeAsset.type ===
@@ -525,11 +541,7 @@ export default function WalletSendScreen({navigation}) {
                                                                 .chain
                                                         ]
                                                     }>
-                                                    {parseFloat(
-                                                        estimatedGasFee
-                                                            .estimateGas
-                                                            ?.ether * 2,
-                                                    )}
+                                                    {gasDisplayValue}
                                                 </Balance>
                                             </CommonText>
                                         </>

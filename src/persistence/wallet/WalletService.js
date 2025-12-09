@@ -17,6 +17,7 @@ import {StorageService} from '@modules/core/storage/StorageService';
 import {Logs} from '@modules/core/log/logs';
 import {PriceService} from '@persistence/price/PriceService';
 import ReduxStore from '@modules/redux/ReduxStore';
+import {applicationProperties} from '@src/application.properties';
 
 export const WalletService = {
     insert,
@@ -45,41 +46,54 @@ async function insert({
 }) {
     try {
         const walletListData = await StorageService.getItem(WALLET_LIST_KEY);
-        const walletList = walletListData ? walletListData.wallets : [];
-        let coins,
-            tokens = [];
-        if (mnemonic) {
-            const walletData = await WalletFactory.fromMnemonic(
-                [...coinsParam, ...tokenParam],
-                mnemonic,
-            );
-            coins = walletData.coins;
-            tokens = walletData.tokens;
-        } else if (privateKey) {
-            if (!_.isString(privateKey)){
-                privateKey = privateKey.toString();
-            }
+        const walletList = walletListData?.wallets
+            ? [...walletListData.wallets]
+            : [];
 
-            const walletData = await WalletFactory.fromPrivateKey(
-                [...coinsParam, ...tokenParam],
-                privateKey,
-            );
-            coins = walletData.coins;
-            tokens = walletData.tokens;
+        const baseCoins = _.cloneDeep(coinsParam || DEFAULT_WALLET.coins || []);
+        const baseTokens = _.cloneDeep(
+            tokenParam || DEFAULT_WALLET.tokens || [],
+        );
+
+        const derivationTargets = [...baseCoins, ...baseTokens];
+
+        if (!mnemonic && !privateKey) {
+            throw new Error('A mnemonic or private key is required.');
         }
-        const activeAsset = _.find(coins, {id: 'ethereum'});
+
+        const normalizedPrivateKey =
+            privateKey && !_.isString(privateKey)
+                ? privateKey.toString()
+                : privateKey;
+
+        const walletData = mnemonic
+            ? await WalletFactory.fromMnemonic(derivationTargets, mnemonic)
+            : await WalletFactory.fromPrivateKey(
+                  derivationTargets,
+                  normalizedPrivateKey,
+              );
+
+        const coins = walletData?.coins || walletData?.wallets || [];
+        const tokens = walletData?.tokens || [];
+
+        if (!coins.length) {
+            throw new Error('Failed to derive wallet addresses.');
+        }
+
+        const activeAsset =
+            _.find(coins, {id: 'ethereum'}) || _.first(coins) || null;
         const wallet = {
             id: moment().format('YYYYMMDDhhmmss'),
-            name: name,
-            type: type,
+            name: name || applicationProperties.defaultWalletName,
+            type: type || DEFAULT_WALLET.type,
             logoUri: logoURI,
-            defaultChain: defaultChain,
+            defaultChain: defaultChain || DEFAULT_WALLET.defaultChain,
             mnemonic: mnemonic,
-            coins: coins,
+            coins,
             totalBalance: 0.0,
-            activeAsset: activeAsset,
-            tokens: tokens,
-            chain,
+            activeAsset,
+            tokens,
+            chain: chain || DEFAULT_WALLET.chain,
         };
         walletList.push(wallet);
         await StorageService.setItem(WALLET_LIST_KEY, {
@@ -97,7 +111,7 @@ async function insert({
         Logs.info('WalletService: insert' + error);
         return {
             success: false,
-            data: {},
+            data: error?.message || {},
         };
     }
 }
