@@ -65,7 +65,7 @@ index 0db85cb..c728a18 100644
 +        throw new Exception(stderr ?: "Empty output from command: ${command}")
 +      }
 +
-+      return stdout
++      return stdout.trim()
      } catch (Exception exception) {
        this.logger.error("${LOG_PREFIX}Running '${command}' command failed.")
        throw exception
