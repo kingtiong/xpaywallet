@@ -1,0 +1,45 @@
+diff --git a/node_modules/@solana/web3.js/lib/index.native.js b/node_modules/@solana/web3.js/lib/index.native.js
+index 3a0f0b6..2d8c2df 100644
+--- a/node_modules/@solana/web3.js/lib/index.native.js
++++ b/node_modules/@solana/web3.js/lib/index.native.js
+@@ -629,8 +629,8 @@
+       getOrInsertDefault(ix.programId).isInvoked = true;
+       for (const accountMeta of ix.keys) {
+         const keyMeta = getOrInsertDefault(accountMeta.pubkey);
+-        keyMeta.isSigner ||= accountMeta.isSigner;
+-        keyMeta.isWritable ||= accountMeta.isWritable;
++        keyMeta.isSigner = keyMeta.isSigner || accountMeta.isSigner;
++        keyMeta.isWritable = keyMeta.isWritable || accountMeta.isWritable;
+       }
+     }
+     return new CompiledKeys(payer, keyMetaMap);
+@@ -1806,11 +1806,17 @@
+     } of this.signatures) {
+       if (signature === null) {
+         if (requireAllSignatures) {
+-          (errors.missing ||= []).push(publicKey);
++          if (!errors.missing) {
++            errors.missing = [];
++          }
++          errors.missing.push(publicKey);
+         }
+       } else {
+         if (!verify(signature, message, publicKey.toBytes())) {
+-          (errors.invalid ||= []).push(publicKey);
++          if (!errors.invalid) {
++            errors.invalid = [];
++          }
++          errors.invalid.push(publicKey);
+         }
+       }
+     }
+@@ -7556,7 +7562,9 @@
+     if (hash == null) {
+       return () => {};
+     }
+-    const stateChangeCallbacks = this._subscriptionStateChangeCallbacksByHash[hash] ||= new Set();
++    const stateChangeCallbacks = this._subscriptionStateChangeCallbacksByHash[hash] =
++      this._subscriptionStateChangeCallbacksByHash[hash] || new Set();
+     stateChangeCallbacks.add(callback);
+     return () => {
+       stateChangeCallbacks.delete(callback);
