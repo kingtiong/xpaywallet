@@ -71,7 +71,25 @@ index 0db85cb..c728a18 100644
        throw exception
      }
    }
-@@ -443,12 +451,22 @@ class ReactNativeModules {
+@@ -439,9 +457,16 @@ class ReactNativeModules {
+     def cliResolveScript = "try {console.log(require('@react-native-community/cli').bin);} catch (e) {console.log(require('react-native/cli').bin);}"
+     String[] nodeCommand = ["node", "-e", cliResolveScript]
+-    def cliPath = this.getCommandOutput(nodeCommand, this.root)
++    def cliPathRaw = this.getCommandOutput(nodeCommand, this.root)
++    // Be defensive: some environments may emit additional lines or line endings here.
++    // We select the last non-empty line as the CLI entry point.
++    def cliPathLines = cliPathRaw
++      ?.readLines()
++      ?.collect { it?.trim() }
++      ?.findAll { it }
++    def cliPath = (cliPathLines && cliPathLines.size() > 0) ? cliPathLines.last() : cliPathRaw?.trim()
+ 
+     String[] reactNativeConfigCommand = ["node", cliPath, "config"]
+     def reactNativeConfigOutput = this.getCommandOutput(reactNativeConfigCommand, this.root)
+ 
+     def json
+     try {
+@@ -443,12 +479,22 @@ class ReactNativeModules {
  
      String[] reactNativeConfigCommand = ["node", cliPath, "config"]
      def reactNativeConfigOutput = this.getCommandOutput(reactNativeConfigCommand, this.root)
