@@ -79,7 +79,9 @@ import org.apache.tools.ant.taskdefs.condition.Os
  */
 
 project.ext.react = [
-    enableHermes: true,  // clean and rebuild if changing
+    // Hermes in RN 0.70 can choke on modern RegExp features (named capture groups)
+    // used by some dependencies, breaking release bundling. Use JSC for stability.
+    enableHermes: false,  // clean and rebuild if changing
 ]
 
 apply from: "../../node_modules/react-native/react.gradle"
