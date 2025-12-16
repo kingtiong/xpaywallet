@@ -2,7 +2,7 @@ diff --git a/node_modules/@react-native-community/cli-platform-android/native_mo
 index 0db85cb..c728a18 100644
 --- a/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
 +++ b/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
-@@ -391,28 +391,36 @@ class ReactNativeModules {
+@@ -391,31 +391,49 @@ class ReactNativeModules {
    /**
     * Runs a specified command using Runtime exec() in a specified directory.
     * Throws when the command result is empty.
@@ -71,7 +71,7 @@ index 0db85cb..c728a18 100644
        throw exception
      }
    }
-@@ -443,14 +451,26 @@ class ReactNativeModules {
+@@ -443,12 +451,22 @@ class ReactNativeModules {
  
      String[] reactNativeConfigCommand = ["node", cliPath, "config"]
      def reactNativeConfigOutput = this.getCommandOutput(reactNativeConfigCommand, this.root)
