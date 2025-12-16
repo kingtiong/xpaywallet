@@ -1,0 +1,97 @@
+diff --git a/node_modules/@react-native-community/cli-platform-android/native_modules.gradle b/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
+index 0db85cb..c728a18 100644
+--- a/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
++++ b/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
+@@ -391,28 +391,36 @@ class ReactNativeModules {
+   /**
+    * Runs a specified command using Runtime exec() in a specified directory.
+    * Throws when the command result is empty.
+    */
+   String getCommandOutput(String[] command, File directory) {
+     try {
+-      def output = ""
+       def cmdProcess = Runtime.getRuntime().exec(command, null, directory)
+-      def bufferedReader = new BufferedReader(new InputStreamReader(cmdProcess.getInputStream()))
+-      def buff = ""
+-      def readBuffer = new StringBuffer()
+-      while ((buff = bufferedReader.readLine()) != null) {
+-        readBuffer.append(buff)
+-      }
+-      output = readBuffer.toString()
+-      if (!output) {
+-        this.logger.error("${LOG_PREFIX}Unexpected empty result of running '${command}' command.")
+-        def bufferedErrorReader = new BufferedReader(new InputStreamReader(cmdProcess.getErrorStream()))
+-        def errBuff = ""
+-        def readErrorBuffer = new StringBuffer()
+-        while ((errBuff = bufferedErrorReader.readLine()) != null) {
+-          readErrorBuffer.append(errBuff)
+-        }
+-        throw new Exception(readErrorBuffer.toString())
+-      }
+-      return output
++      def stdoutBuffer = new StringBuffer()
++      def stderrBuffer = new StringBuffer()
++
++      def stdoutReader = new BufferedReader(new InputStreamReader(cmdProcess.getInputStream(), "UTF-8"))
++      def stderrReader = new BufferedReader(new InputStreamReader(cmdProcess.getErrorStream(), "UTF-8"))
++
++      def stdoutThread = Thread.start {
++        def line = ""
++        while ((line = stdoutReader.readLine()) != null) {
++          stdoutBuffer.append(line).append("\n")
++        }
++      }
++      def stderrThread = Thread.start {
++        def line = ""
++        while ((line = stderrReader.readLine()) != null) {
++          stderrBuffer.append(line).append("\n")
++        }
++      }
++
++      def exitCode = cmdProcess.waitFor()
++      stdoutThread.join()
++      stderrThread.join()
++
++      def stdout = stdoutBuffer.toString()
++      def stderr = stderrBuffer.toString()
++
++      if (exitCode != 0) {
++        this.logger.error("${LOG_PREFIX}Running '${command}' command failed with exit code ${exitCode}.")
++        throw new Exception("Command failed: ${command}\nexitCode=${exitCode}\nstdout=${stdout}\nstderr=${stderr}")
++      }
++
++      if (!stdout) {
++        this.logger.error("${LOG_PREFIX}Unexpected empty result of running '${command}' command.")
++        throw new Exception(stderr ?: "Empty output from command: ${command}")
++      }
++
++      return stdout
+     } catch (Exception exception) {
+       this.logger.error("${LOG_PREFIX}Running '${command}' command failed.")
+       throw exception
+     }
+   }
+@@ -443,14 +451,26 @@ class ReactNativeModules {
+ 
+     String[] reactNativeConfigCommand = ["node", cliPath, "config"]
+     def reactNativeConfigOutput = this.getCommandOutput(reactNativeConfigCommand, this.root)
+ 
+     def json
+     try {
+-      json = new JsonSlurper().parseText(reactNativeConfigOutput)
++      def sanitizedConfigOutput = reactNativeConfigOutput?.trim()
++      // Some environments/log levels may emit non-JSON lines before/after the JSON payload.
++      // Gradle expects JSON here, so we attempt to extract the JSON object from the output.
++      if (sanitizedConfigOutput && !sanitizedConfigOutput.startsWith("{")) {
++        def startIdx = sanitizedConfigOutput.indexOf("{")
++        def endIdx = sanitizedConfigOutput.lastIndexOf("}")
++        if (startIdx >= 0 && endIdx > startIdx) {
++          sanitizedConfigOutput = sanitizedConfigOutput.substring(startIdx, endIdx + 1)
++        }
++      }
++      json = new JsonSlurper().parseText(sanitizedConfigOutput)
+     } catch (Exception exception) {
+       throw new Exception("Calling `${reactNativeConfigCommand}` finished with an exception. Error message: ${exception.toString()}. Output: ${reactNativeConfigOutput}");
+     }
+     def dependencies = json["dependencies"]
+     def project = json["project"]["android"]
