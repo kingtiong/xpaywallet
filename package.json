@@ -11,6 +11,9 @@
     "bundle": "node --max-old-space-size=4096 ./node_modules/react-native/local-cli/cli.js bundle ...",
     "postinstall": "rn-nodeify --install http,https,zlib,path,crypto,fs,stream,assert,https,events,Buffer,process --hack && patch-package"
   },
+  "engines": {
+    "node": ">=20.18.0"
+  },
   "dependencies": {
     "@0x/contract-wrappers": "^13.22.13",
     "@ethersproject/shims": "^5.7.0",
@@ -21,7 +24,7 @@
     "@metamask/mobile-provider": "^3.0.0",
     "@metamask/providers": "^22.1.1",
     "@quicknode/sdk": "^2.3.0",
-    "@react-native-clipboard/clipboard": "^1.11.1",
+    "@react-native-clipboard/clipboard": "1.11.1",
     "@react-native-community/async-storage": "^1.12.1",
     "@react-native-community/hooks": "^3.0.0",
     "@react-navigation/bottom-tabs": "^6.4.3",
