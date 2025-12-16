@@ -9,12 +9,12 @@ module.exports = {
   transformer: {
     // Metro minifier (terser) defaults to a low ECMAScript version, which can fail
     // to parse modern syntax from some dependencies (e.g. numeric separators like 900_000).
-    // Bump the parser ECMA level so release bundling/minification succeeds.
+    // Numeric separators require ES2021+, so we bump to a modern ECMA level.
     minifierConfig: {
-      ecma: 2020,
-      parse: {
-        ecma: 2020,
-      },
+      ecma: 2022,
+      parse: { ecma: 2022 },
+      compress: { ecma: 2022 },
+      mangle: true,
       output: {
         comments: false,
         ascii_only: true,
