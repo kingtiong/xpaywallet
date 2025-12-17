@@ -1,6 +1,11 @@
 module.exports = {
     presets: ['module:metro-react-native-babel-preset'],
     plugins: [
+        // Ensure generated bundle is compatible with older Android JS runtimes (JSC).
+        // Some dependencies ship modern syntax (`?.`, `??`, numeric separators).
+        '@babel/plugin-transform-optional-chaining',
+        '@babel/plugin-transform-nullish-coalescing-operator',
+        '@babel/plugin-transform-numeric-separator',
         [
             'module-resolver',
             {
