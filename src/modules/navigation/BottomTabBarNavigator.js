@@ -6,13 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import HomeScreen from '@screens/home/HomeScreen';
 import SettingScreen from '@screens/setting/SettingScreen';
-import MarketScreen from '@screens/market/MarketScreen';
 import DAppsScreen from '@screens/dapps/DAppsScreen';
-import SwapScreen from '@screens/swap/SwapScreen';
-import DummySwapScreen from '@screens/swap/DummySwapScreen';
-import NftScreen from '@screens/nft/NftScreen';
-import wallet from '@screens/test/Wallet';
-import CardScreen from '@screens/wallet/CardScreen';
 
 import Icon, { Icons } from '@components/icons/Icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -81,36 +75,6 @@ function BottomTabBarNavigator() {
                     tabBarIcon: ({ color, size }) => (
                         <Icon
                             name="wallet-outline"
-                            size={32}
-                            type={Icons.Ionicons}
-                            color={color}
-                        />
-                    ),
-                }}
-            />
-            <Tab.Screen
-                name="DummySwapScreen"
-                component={DummySwapScreen}
-                options={{
-                    tabBarLabel: t('menu_swap'),
-                    tabBarIcon: ({ color, size }) => (
-                        <Icon
-                            name="swap-horizontal"
-                            size={32}
-                            type={Icons.Ionicons}
-                            color={color}
-                        />
-                    ),
-                }}
-            />
-            <Tab.Screen
-                name="CardScreen"
-                component={CardScreen}
-                options={{
-                    tabBarLabel: t('menu_card'),
-                    tabBarIcon: ({ color, size }) => (
-                        <Icon
-                            name="card"
                             size={32}
                             type={Icons.Ionicons}
                             color={color}

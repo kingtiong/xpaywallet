@@ -36,7 +36,6 @@ import {
     sendAndConfirmTransaction
 } from '@solana/web3.js';
 import {Logs} from "@modules/log/logs";
-import {FeeCalculatorLayout} from "@solana/web3.js/src";
 import {WalletFactory} from "@modules/core/factory/WalletFactory";
 
 export default function SolanaWalletSendScreen({ navigation }) {

@@ -2,11 +2,9 @@ import 'react-native-get-random-values';
 import '@ethersproject/shims';
 import {BigNumber, ethers, utils} from 'ethers';
 import {ProviderFactory} from '@modules/core/factory/ProviderFactory';
-import {BitcoinWallet} from '@modules/core/provider/bitcoin/BitcoinWallet';
 import {EthWallet} from '@modules/core/provider/eth/EthWallet';
 import {configProperties} from '@modules/core/config/config.properties';
 import axios from 'axios';
-import BitcoinUtil from '@modules/core/provider/bitcoin/BitcoinUtil';
 import {
     ASSET_TYPE_COIN,
     ASSET_TYPE_TOKEN,
@@ -210,17 +208,7 @@ export class WalletFactory {
             for (let i = 0; i < coins.length; i++) {
                 const coin = coins[i];
                 const provider = await ProviderFactory.getProvider(coin.chain);
-                if (coin.chain === 'BTC') {
-                    const btcWallet = new BitcoinWallet(provider);
-                    const {success, data} = await btcWallet.fromPrivateKey(
-                        coin,
-                        privateKey || coin.privateKey,
-                    );
-                    if (success) {
-                        this.wallets[coin.chain] = btcWallet;
-                        all.push(data);
-                    }
-                } else if (
+                if (
                     coin.chain === 'ETH' ||
                     coin.chain === 'BSC' ||
                     coin.chain === 'POLYGON'

@@ -17,7 +17,6 @@ import {
     SystemProgram,
     Transaction
 } from "@solana/web3.js";
-import {FeeCalculatorLayout} from "@solana/web3.js/src";
 import {useEffect, useState} from "react";
 import * as Token from "@solana/spl-token";
 import {ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID} from "@solana/spl-token";

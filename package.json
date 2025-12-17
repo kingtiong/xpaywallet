@@ -7,8 +7,9 @@
     "ios": "react-native run-ios",
     "start": "react-native start",
     "test": "jest",
-    "lint": "eslint .",
-    "bundle": "node --max-old-space-size=4096 ./node_modules/react-native/local-cli/cli.js bundle ...",
+    "lint": "eslint src __tests__ App.js index.js",
+    "bundle": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
+    "bundle:ios": "react-native bundle --platform ios --dev false --entry-file index.js --bundle-output ios/main.jsbundle --assets-dest ios",
     "postinstall": "rn-nodeify --install http,https,zlib,path,crypto,fs,stream,assert,https,events,Buffer,process --hack && patch-package"
   },
   "engines": {
@@ -27,8 +28,8 @@
     "@metamask/mobile-provider": "^3.0.0",
     "@metamask/providers": "^22.1.1",
     "@quicknode/sdk": "^2.3.0",
+    "@react-native-async-storage/async-storage": "^1.20.0",
     "@react-native-clipboard/clipboard": "1.11.1",
-    "@react-native-community/async-storage": "^1.12.1",
     "@react-native-community/hooks": "^3.0.0",
     "@react-navigation/bottom-tabs": "^6.4.3",
     "@react-navigation/drawer": "^6.6.3",
@@ -85,7 +86,6 @@
     "react-native-actions-sheet": "^0.8.29",
     "react-native-actionsheet": "^2.4.2",
     "react-native-app-intro-slider": "^4.0.4",
-    "react-native-cache-storage": "^0.0.4",
     "react-native-camera": "^4.2.1",
     "react-native-chart-kit": "^6.12.0",
     "react-native-crypto": "^2.2.0",
@@ -105,7 +105,7 @@
     "react-native-pager-view": "^6.2.1",
     "react-native-permissions": "^3.6.1",
     "react-native-qrcode-scanner": "^1.5.5",
-    "react-native-qrcode-svg": "6.3.21",
+    "react-native-qrcode-svg": "6.3.0",
     "react-native-randombytes": "^3.6.1",
     "react-native-reanimated": "2.15.0",
     "react-native-resegmented-control": "^2.4.0",
@@ -115,7 +115,6 @@
     "react-native-share": "^8.0.1",
     "react-native-snap-carousel": "^3.9.1",
     "react-native-svg": "^13.6.0",
-    "react-native-svg-charts": "^5.4.0",
     "react-native-swipe-list-view": "^3.2.9",
     "react-native-swipeable-list": "^0.1.2",
     "react-native-tab-view": "^3.5.2",
@@ -145,6 +144,7 @@
   "devDependencies": {
     "@babel/core": "^7.12.9",
     "@babel/runtime": "^7.12.5",
+    "@react-native-community/eslint-config": "^2.0.0",
     "@types/node": "^20.14.7",
     "babel-jest": "^26.6.3",
     "babel-plugin-module-resolver": "^4.1.0",
@@ -156,7 +156,10 @@
     "rn-nodeify": "^10.3.0"
   },
   "jest": {
-    "preset": "react-native"
+    "preset": "react-native",
+    "moduleNameMapper": {
+      "\\.(png|jpg|jpeg|gif|webp|svg)$": "<rootDir>/__mocks__/fileMock.js"
+    }
   },
   "react-native": {
     "crypto": "react-native-crypto",
