@@ -1,0 +1,49 @@
+diff --git a/node_modules/react-native-qrcode-svg/src/LogoSVG/index.native.js b/node_modules/react-native-qrcode-svg/src/LogoSVG/index.native.js
+index 25f92b6..1f0ad4a 100644
+--- a/node_modules/react-native-qrcode-svg/src/LogoSVG/index.native.js
++++ b/node_modules/react-native-qrcode-svg/src/LogoSVG/index.native.js
+@@ -1,24 +1,43 @@
+ import React from "react";
+-import { LocalSvg } from "react-native-svg/css";
+ import { SvgUri, SvgXml } from "react-native-svg";
+ import { isString, isUrlString } from "../utils";
+ 
++// react-native-svg removed the `react-native-svg/css` entrypoint in newer versions.
++// Keep compatibility by attempting a dynamic require at runtime (Metro won't try to resolve it).
++const tryRequire = (moduleName) => {
++  try {
++    // eslint-disable-next-line global-require, import/no-dynamic-require
++    return require(moduleName);
++  } catch (e) {
++    return null;
++  }
++};
++
++const svgCss = tryRequire("react-native-svg/css");
++const LocalSvg = svgCss && svgCss.LocalSvg ? svgCss.LocalSvg : null;
++
+ const LogoSVG = ({ svg, logoSize, logoColor }) => {
+   if (isString(svg)) {
+     if (isUrlString(svg)) {
+       return (
+         <SvgUri uri={svg} fill={logoColor} width={logoSize} height={logoSize} />
+       );
+     }
+ 
+     return (
+       <SvgXml xml={svg} fill={logoColor} width={logoSize} height={logoSize} />
+     );
+   }
+ 
++  if (!LocalSvg) {
++    // If LocalSvg isn't available, we can't render bundled svg assets.
++    // Returning null keeps QR generation functional (logo just won't render).
++    return null;
++  }
++
+   return (
+     <LocalSvg asset={svg} fill={logoColor} width={logoSize} height={logoSize} />
+   );
+ };
+ 
+ export default LogoSVG;
