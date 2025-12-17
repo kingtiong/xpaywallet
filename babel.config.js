@@ -23,4 +23,16 @@ module.exports = {
             },
         ]
     ],
+    overrides: [
+        // Some dependencies ship modern JS syntax that older Android JSC can't parse
+        // (e.g. `??`, `?.`, numeric separators like `900_000`). Force-transform `ox`.
+        {
+            test: /node_modules[\\/](ox)[\\/]/,
+            plugins: [
+                '@babel/plugin-transform-nullish-coalescing-operator',
+                '@babel/plugin-transform-optional-chaining',
+                '@babel/plugin-transform-numeric-separator',
+            ],
+        },
+    ],
 };
