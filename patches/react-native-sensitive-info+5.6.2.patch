@@ -1,8 +1,63 @@
 diff --git a/node_modules/react-native-sensitive-info/android/build.gradle b/node_modules/react-native-sensitive-info/android/build.gradle
-index f1bd23a..3f10836 100644
+index f1bd23a..c3d75ad 100644
 --- a/node_modules/react-native-sensitive-info/android/build.gradle
 +++ b/node_modules/react-native-sensitive-info/android/build.gradle
-@@ -75,7 +75,9 @@ dependencies {
+@@ -1,38 +1,22 @@
+-buildscript {
+-  ext.getExtOrDefault = {name ->
+-    return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties['SensitiveInfo_' + name]
+-  }
+-
+-  repositories {
+-    google()
+-    mavenCentral()
+-  }
+-
+-  dependencies {
+-    classpath "com.android.tools.build:gradle:8.7.2"
+-    // noinspection DifferentKotlinGradleVersion
+-    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
+-  }
+-}
+-
+-
+ apply plugin: "com.android.library"
+ apply plugin: "kotlin-android"
++// NOTE:
++// react-native-sensitive-info doesn't need React Native Codegen for RN 0.70.x.
++// Applying `com.facebook.react` here triggers codegen tasks which can fail Gradle task
++// validation on Windows/Gradle 7.x (implicit dependencies). Keep this disabled.
+ 
+-apply plugin: "com.facebook.react"
+-
+-def getExtOrIntegerDefault(name) {
+-  return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["SensitiveInfo_" + name]).toInteger()
++def getExtOrIntegerDefault(name, fallback) {
++  return rootProject.ext.has(name) ? rootProject.ext.get(name) : fallback
+ }
+ 
+ android {
+   namespace "com.sensitiveinfo"
+ 
+-  compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
++  compileSdkVersion getExtOrIntegerDefault("compileSdkVersion", 33)
+ 
+   defaultConfig {
+-    minSdkVersion getExtOrIntegerDefault("minSdkVersion")
+-    targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
++    minSdkVersion getExtOrIntegerDefault("minSdkVersion", 21)
++    targetSdkVersion getExtOrIntegerDefault("targetSdkVersion", 33)
+   }
+ 
+   buildFeatures {
+@@ -69,13 +53,15 @@ repositories {
+   google()
+ }
+ 
+-def kotlin_version = getExtOrDefault("kotlinVersion")
++def kotlin_version = rootProject.ext.has("kotlinVersion") ? rootProject.ext.get("kotlinVersion") : "1.6.21"
+ 
+ dependencies {
    // React Native - Core library for bridging JavaScript and Native code
    // Version: From parent gradle configuration
    // Purpose: React Native bridge, component registry, etc.
