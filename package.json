@@ -155,6 +155,10 @@
     "react-test-renderer": "18.1.0",
     "rn-nodeify": "^10.3.0"
   },
+  "overrides": {
+    "react-native-screens": "3.18.2",
+    "react-native-gesture-handler": "2.8.0"
+  },
   "jest": {
     "preset": "react-native",
     "moduleNameMapper": {
