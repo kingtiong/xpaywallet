@@ -8,7 +8,6 @@ import {hdkey} from 'ethereumjs-wallet';
 import {pkToAddress} from '@modules/core/provider/tron/utils/crypto';
 import TronWeb from 'tronweb';
 import {ProviderFactory} from '@modules/core/factory/ProviderFactory';
-import {pbkdf2} from 'react-native-fast-crypto';
 
 export const TRON_BIP39_PATH_PREFIX = "m/44'/195'";
 export const TRON_BIP39_PATH_INDEX_0 = TRON_BIP39_PATH_PREFIX + "/0'/0/0";
@@ -25,28 +24,8 @@ export class TronWallet implements Wallet {
         this.data = data;
     }
     async mnemonicToSeed(mnemonic, passphrase = '') {
-        const mnemonicBuffer = Buffer.from(mnemonic, 'utf8');
-        const saltBuffer = Buffer.from('mnemonic' + passphrase, 'utf8'); // BIP39 specifies "mnemonic" + passphrase
-        const iterations = 2048; // BIP39 standard
-        const keyLength = 64; // BIP39 standard length for seed
-        const alg = 'sha512'; // BIP39 uses SHA512
-
-        try {
-            // Using pbkdf2.deriveAsync from your defined methods
-            const seed = await pbkdf2.deriveAsync(
-                mnemonicBuffer,
-                saltBuffer,
-                iterations,
-                keyLength,
-                alg,
-            );
-
-            // Convert the result to hex format if needed or use it as is
-            return seed.toString('hex');
-        } catch (error) {
-            console.error('Error generating seed from mnemonic:', error);
-            throw error;
-        }
+        const seed = await Bip39.mnemonicToSeed(mnemonic, passphrase);
+        return seed.toString('hex');
     }
     async fromMnemonic(data, mnemonic): Promise<Object> {
         try {

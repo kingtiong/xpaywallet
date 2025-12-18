@@ -13,7 +13,6 @@ import {
     SignTypedDataVersion,
 } from '@metamask/eth-sig-util';
 import {toBuffer} from 'ethereumjs-util';
-import {pbkdf2} from 'react-native-fast-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export class EthWallet implements Wallet {
@@ -39,27 +38,10 @@ export class EthWallet implements Wallet {
     }
 
     async mnemonicToSeed(mnemonic, passphrase = '') {
-        console.log('Passphrase used:', passphrase);
-        const mnemonicBuffer = Buffer.from(mnemonic, 'utf8');
-        const saltBuffer = Buffer.from('mnemonic' + passphrase, 'utf8');
-        const iterations = 2048;
-        const keyLength = 64;
-        const alg = 'sha512';
-
-        try {
-            const seed = await pbkdf2.deriveAsync(
-                mnemonicBuffer,
-                saltBuffer,
-                iterations,
-                keyLength,
-                alg,
-            );
-            console.log('Generated seed:', seed.toString('hex'));
-            return seed.toString('hex');
-        } catch (error) {
-            console.error('Error generating seed from mnemonic:', error);
-            throw error;
-        }
+        // Use the pure-JS BIP39 implementation to avoid relying on native crypto
+        // modules during bundling/testing.
+        const seed = await Bip39.mnemonicToSeed(mnemonic, passphrase);
+        return seed.toString('hex');
     }
 
     async saveMnemonic(mnemonic: string) {

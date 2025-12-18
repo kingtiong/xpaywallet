@@ -1,11 +1,97 @@
+diff --git a/node_modules/@react-native-community/cli-platform-android/build/config/getAndroidProject.js b/node_modules/@react-native-community/cli-platform-android/build/config/getAndroidProject.js
+index 305602e..1220d13 100644
+--- a/node_modules/@react-native-community/cli-platform-android/build/config/getAndroidProject.js
++++ b/node_modules/@react-native-community/cli-platform-android/build/config/getAndroidProject.js
+@@ -27,6 +27,16 @@ function _fs() {
+   return data;
+ }
+ 
++function _path() {
++  const data = _interopRequireDefault(require("path"));
++
++  _path = function () {
++    return data;
++  };
++
++  return data;
++}
++
+ function _chalk() {
+   const data = _interopRequireDefault(require("chalk"));
+ 
+@@ -64,7 +74,21 @@ function getPackageName(manifestPath) {
+   let packageNameMatchArray = androidManifest.match(/package="(.+?)"/);
+ 
+   if (!packageNameMatchArray || packageNameMatchArray.length === 0) {
+-    throw new (_cliTools().CLIError)(`Failed to build the app: No package name found. Found errors in ${_chalk().default.underline.dim(`${manifestPath}`)}`);
++    // Many modern RN libraries omit `package="..."` in their AndroidManifest.xml and rely on
++    // Gradle `namespace` instead. Fall back to parsing the library `android/build.gradle` when possible.
++    const namespace = findNamespaceFromGradle(manifestPath);
++
++    if (!namespace) {
++      throw new (_cliTools().CLIError)(`Failed to build the app: No package name found. Found errors in ${_chalk().default.underline.dim(`${manifestPath}`)}`);
++    }
++
++    let packageName = namespace;
++
++    if (!validatePackageName(packageName)) {
++      _cliTools().logger.warn(`Invalid application's package name "${_chalk().default.bgRed(packageName)}" resolved from Gradle namespace. Read guidelines for setting the package name here: ${_chalk().default.underline.dim('https://developer.android.com/studio/build/application-id')}`);
++    }
++
++    return packageName;
+   }
+ 
+   let packageName = packageNameMatchArray[1];
+@@ -81,4 +105,43 @@ function validatePackageName(packageName) {
+   return /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i.test(packageName);
+ }
+ 
++function findNamespaceFromGradle(manifestPath) {
++  try {
++    // Walk up to find the closest `android` directory.
++    let dir = _path().default.dirname(manifestPath);
++    let androidDir = null;
++
++    while (dir && dir !== _path().default.dirname(dir)) {
++      if (_path().default.basename(dir) === 'android') {
++        androidDir = dir;
++        break;
++      }
++      dir = _path().default.dirname(dir);
++    }
++
++    if (!androidDir) {
++      return null;
++    }
++
++    const gradlePaths = [_path().default.join(androidDir, 'build.gradle'), _path().default.join(androidDir, 'build.gradle.kts')];
++
++    for (const gradlePath of gradlePaths) {
++      if (!_fs().default.existsSync(gradlePath)) continue;
++      const content = _fs().default.readFileSync(gradlePath, 'utf8');
++
++      // Support both Groovy and Kotlin DSL variants:
++      // - namespace "com.example"
++      // - namespace = "com.example"
++      const match = content.match(/namespace\s*(?:=)?\s*["']([^"']+)["']/);
++      if (match && match[1]) {
++        return match[1];
++      }
++    }
++
++    return null;
++  } catch (e) {
++    return null;
++  }
++}
++
+ //# sourceMappingURL=getAndroidProject.js.map
+\ No newline at end of file
 diff --git a/node_modules/@react-native-community/cli-platform-android/native_modules.gradle b/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
-index 0db85cb..c728a18 100644
+index 4a63eaf..43fc838 100644
 --- a/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
 +++ b/node_modules/@react-native-community/cli-platform-android/native_modules.gradle
-@@ -391,31 +391,49 @@ class ReactNativeModules {
-   /**
-    * Runs a specified command using Runtime exec() in a specified directory.
-    * Throws when the command result is empty.
+@@ -393,26 +393,44 @@ class ReactNativeModules {
     */
    String getCommandOutput(String[] command, File directory) {
      try {
@@ -16,19 +102,6 @@ index 0db85cb..c728a18 100644
 -      def readBuffer = new StringBuffer()
 -      while ((buff = bufferedReader.readLine()) != null) {
 -        readBuffer.append(buff)
--      }
--      output = readBuffer.toString()
--      if (!output) {
--        this.logger.error("${LOG_PREFIX}Unexpected empty result of running '${command}' command.")
--        def bufferedErrorReader = new BufferedReader(new InputStreamReader(cmdProcess.getErrorStream()))
--        def errBuff = ""
--        def readErrorBuffer = new StringBuffer()
--        while ((errBuff = bufferedErrorReader.readLine()) != null) {
--          readErrorBuffer.append(errBuff)
--        }
--        throw new Exception(readErrorBuffer.toString())
--      }
--      return output
 +      def stdoutBuffer = new StringBuffer()
 +      def stderrBuffer = new StringBuffer()
 +
@@ -40,13 +113,23 @@ index 0db85cb..c728a18 100644
 +        while ((line = stdoutReader.readLine()) != null) {
 +          stdoutBuffer.append(line).append("\n")
 +        }
-+      }
+       }
+-      output = readBuffer.toString()
+-      if (!output) {
+-        this.logger.error("${LOG_PREFIX}Unexpected empty result of running '${command}' command.")
+-        def bufferedErrorReader = new BufferedReader(new InputStreamReader(cmdProcess.getErrorStream()))
+-        def errBuff = ""
+-        def readErrorBuffer = new StringBuffer()
+-        while ((errBuff = bufferedErrorReader.readLine()) != null) {
+-          readErrorBuffer.append(errBuff)
 +      def stderrThread = Thread.start {
 +        def line = ""
 +        while ((line = stderrReader.readLine()) != null) {
 +          stderrBuffer.append(line).append("\n")
-+        }
-+      }
+         }
+-        throw new Exception(readErrorBuffer.toString())
+       }
+-      return output
 +
 +      def exitCode = cmdProcess.waitFor()
 +      stdoutThread.join()
@@ -69,9 +152,8 @@ index 0db85cb..c728a18 100644
      } catch (Exception exception) {
        this.logger.error("${LOG_PREFIX}Running '${command}' command failed.")
        throw exception
-     }
-   }
-@@ -439,9 +457,16 @@ class ReactNativeModules {
+@@ -438,14 +456,31 @@ class ReactNativeModules {
+      */
      def cliResolveScript = "try {console.log(require('@react-native-community/cli').bin);} catch (e) {console.log(require('react-native/cli').bin);}"
      String[] nodeCommand = ["node", "-e", cliResolveScript]
 -    def cliPath = this.getCommandOutput(nodeCommand, this.root)
@@ -83,13 +165,6 @@ index 0db85cb..c728a18 100644
 +      ?.collect { it?.trim() }
 +      ?.findAll { it }
 +    def cliPath = (cliPathLines && cliPathLines.size() > 0) ? cliPathLines.last() : cliPathRaw?.trim()
- 
-     String[] reactNativeConfigCommand = ["node", cliPath, "config"]
-     def reactNativeConfigOutput = this.getCommandOutput(reactNativeConfigCommand, this.root)
- 
-     def json
-     try {
-@@ -443,12 +479,22 @@ class ReactNativeModules {
  
      String[] reactNativeConfigCommand = ["node", cliPath, "config"]
      def reactNativeConfigOutput = this.getCommandOutput(reactNativeConfigCommand, this.root)
@@ -111,5 +186,3 @@ index 0db85cb..c728a18 100644
      } catch (Exception exception) {
        throw new Exception("Calling `${reactNativeConfigCommand}` finished with an exception. Error message: ${exception.toString()}. Output: ${reactNativeConfigOutput}");
      }
-     def dependencies = json["dependencies"]
-     def project = json["project"]["android"]
