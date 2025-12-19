@@ -66,31 +66,16 @@ gradle.projectsEvaluated {
         return
     }
 
-    def producerTaskNamePatterns = [
-            ~/^process.*ReleaseManifest$/,
-            ~/^sync.*ReleaseLibJars$/,
-            ~/^compile.*Release(JavaWithJavac|Kotlin)$/,
-            ~/^copy.*ReleaseJniLibsProjectAndLocalJars$/,
-            ~/^generate.*Release(BuildConfig|ResValues)$/,
-            ~/^merge.*Release(JavaResource|JniLibFolders|NativeLibs|Shaders)$/,
-            ~/^package.*Release(Assets|Resources)$/,
-            ~/^externalNativeBuildRelease$/,
-            ~/^stripReleaseDebugSymbols$/,
-            ~/^buildCMakeRelWithDebInfo.*$/,
-    ]
-
     sensitiveInfoProject.tasks.matching { it.name == 'generateCodegenSchemaFromJavaScript' }.configureEach { codegenTask ->
         def producerProjects = rootProject.subprojects.findAll { p ->
             p != sensitiveInfoProject && p.path != ':app'
         }
 
+        // Keep task graph shallow: depend on each module's variant "pre*ReleaseBuild" task,
+        // which (transitively) pulls in the tasks that produce the outputs codegen reads.
         def deps = producerProjects.collect { p ->
-            p.tasks.matching { t ->
-                def n = t.name
-                producerTaskNamePatterns.any { pat -> (n ==~ pat) }
-            }
+            p.tasks.matching { t -> t.name ==~ /^pre.*ReleaseBuild$/ }
         }
-
         codegenTask.dependsOn(deps)
     }
 }
