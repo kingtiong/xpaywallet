@@ -10,7 +10,7 @@
     "lint": "eslint src __tests__ App.js index.js",
     "bundle": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
     "bundle:ios": "react-native bundle --platform ios --dev false --entry-file index.js --bundle-output ios/main.jsbundle --assets-dest ios",
-    "postinstall": "rn-nodeify --install http,https,zlib,path,crypto,fs,stream,assert,https,events,Buffer,process --hack && patch-package"
+    "postinstall": "node scripts/postinstall.js"
   },
   "engines": {
     "node": ">=20.18.0"

@@ -475,7 +475,7 @@ export class WalletConnectionProvider {
                     }
                 };
 
-                // Provide compatibility bridge for DApps expecting `window.dappwallet`
+                // Provide compatibility bridge for DApps expecting window.dappwallet
                 (function initDappWalletBridge() {
                     const ensureFunction = (fn) => typeof fn === 'function' ? fn : () => {};
                     const createBridge = () => ({

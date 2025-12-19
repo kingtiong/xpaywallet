@@ -1,0 +1,14 @@
+diff --git a/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts b/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts
+index ae52bc8..1c68f16 100644
+--- a/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts
++++ b/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts
+@@ -208,7 +208,8 @@ export interface NativeProps extends ViewProps {
+   onFileDownload?: DirectEventHandler<WebViewDownloadEvent>;
+   // eslint-disable-next-line @typescript-eslint/array-type
+   menuItems?: ReadonlyArray<Readonly<{label: string, key: string}>>;
+-  suppressMenuItems?: Readonly<string>[];
++  // eslint-disable-next-line @typescript-eslint/array-type
++  suppressMenuItems?: ReadonlyArray<string>;
+   // Workaround to watch if listener if defined
+   hasOnFileDownload?: boolean;
+   fraudulentWebsiteWarningEnabled?: boolean;

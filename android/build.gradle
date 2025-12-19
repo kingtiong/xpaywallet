@@ -4,8 +4,9 @@ buildscript {
     ext {
         buildToolsVersion = "31.0.0"
         minSdkVersion = 21
-        compileSdkVersion = 33
-        targetSdkVersion = 33
+        // Some AndroidX dependencies (e.g. viewpager2 1.1.x) require compileSdk 34+ via AAR metadata.
+        compileSdkVersion = 34
+        targetSdkVersion = 34
 
         if (System.properties['os.arch'] == "aarch64") {
             // For M1 Users we need to use the NDK 24 which added support for aarch64
@@ -47,5 +48,35 @@ allprojects {
         }
         google()
         maven { url 'https://www.jitpack.io' }
+    }
+}
+
+/**
+ * Gradle task validation (Gradle 7+) can fail builds when a task reads another task's outputs
+ * without declaring a dependency. Some React Native codegen tasks (notably in
+ * `react-native-sensitive-info`) can end up reading build outputs from other native modules,
+ * which triggers "implicit dependency" validation errors during Release builds.
+ *
+ * We make that dependency explicit by wiring `generateCodegenSchemaFromJavaScript` to run after
+ * common Release-variant producer tasks in other library modules. We intentionally exclude `:app`
+ * here to avoid any potential task graph cycles (the app depends on libraries).
+ */
+gradle.projectsEvaluated {
+    def sensitiveInfoProject = rootProject.findProject(':react-native-sensitive-info')
+    if (sensitiveInfoProject == null) {
+        return
+    }
+
+    sensitiveInfoProject.tasks.matching { it.name == 'generateCodegenSchemaFromJavaScript' }.configureEach { codegenTask ->
+        def producerProjects = rootProject.subprojects.findAll { p ->
+            p != sensitiveInfoProject && p.path != ':app'
+        }
+
+        // Keep task graph shallow: depend on each module's variant "pre*ReleaseBuild" task,
+        // which (transitively) pulls in the tasks that produce the outputs codegen reads.
+        def deps = producerProjects.collect { p ->
+            p.tasks.matching { t -> t.name ==~ /^pre.*ReleaseBuild$/ }
+        }
+        codegenTask.dependsOn(deps)
     }
 }
