@@ -49,3 +49,48 @@ allprojects {
         maven { url 'https://www.jitpack.io' }
     }
 }
+
+/**
+ * Gradle task validation (Gradle 7+) can fail builds when a task reads another task's outputs
+ * without declaring a dependency. Some React Native codegen tasks (notably in
+ * `react-native-sensitive-info`) can end up reading build outputs from other native modules,
+ * which triggers "implicit dependency" validation errors during Release builds.
+ *
+ * We make that dependency explicit by wiring `generateCodegenSchemaFromJavaScript` to run after
+ * common Release-variant producer tasks in other library modules. We intentionally exclude `:app`
+ * here to avoid any potential task graph cycles (the app depends on libraries).
+ */
+gradle.projectsEvaluated {
+    def sensitiveInfoProject = rootProject.findProject(':react-native-sensitive-info')
+    if (sensitiveInfoProject == null) {
+        return
+    }
+
+    def producerTaskNamePatterns = [
+            ~/^process.*ReleaseManifest$/,
+            ~/^sync.*ReleaseLibJars$/,
+            ~/^compile.*Release(JavaWithJavac|Kotlin)$/,
+            ~/^copy.*ReleaseJniLibsProjectAndLocalJars$/,
+            ~/^generate.*Release(BuildConfig|ResValues)$/,
+            ~/^merge.*Release(JavaResource|JniLibFolders|NativeLibs|Shaders)$/,
+            ~/^package.*Release(Assets|Resources)$/,
+            ~/^externalNativeBuildRelease$/,
+            ~/^stripReleaseDebugSymbols$/,
+            ~/^buildCMakeRelWithDebInfo.*$/,
+    ]
+
+    sensitiveInfoProject.tasks.matching { it.name == 'generateCodegenSchemaFromJavaScript' }.configureEach { codegenTask ->
+        def producerProjects = rootProject.subprojects.findAll { p ->
+            p != sensitiveInfoProject && p.path != ':app'
+        }
+
+        def deps = producerProjects.collect { p ->
+            p.tasks.matching { t ->
+                def n = t.name
+                producerTaskNamePatterns.any { pat -> (n ==~ pat) }
+            }
+        }
+
+        codegenTask.dependsOn(deps)
+    }
+}
