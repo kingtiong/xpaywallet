@@ -13,6 +13,7 @@ import DummySwapScreen from '@screens/swap/DummySwapScreen';
 import NftScreen from '@screens/nft/NftScreen';
 import wallet from '@screens/test/Wallet';
 import CardScreen from '@screens/wallet/CardScreen';
+import TrustLikeWalletNavigator from '@src/trustlike_wallet/navigation/TrustLikeWalletNavigator';
 
 import Icon, { Icons } from '@components/icons/Icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -81,6 +82,21 @@ function BottomTabBarNavigator() {
                     tabBarIcon: ({ color, size }) => (
                         <Icon
                             name="wallet-outline"
+                            size={32}
+                            type={Icons.Ionicons}
+                            color={color}
+                        />
+                    ),
+                }}
+            />
+            <Tab.Screen
+                name="TrustLikeWallet"
+                component={TrustLikeWalletNavigator}
+                options={{
+                    tabBarLabel: 'TrustLike',
+                    tabBarIcon: ({color}) => (
+                        <Icon
+                            name="shield-checkmark-outline"
                             size={32}
                             type={Icons.Ionicons}
                             color={color}
