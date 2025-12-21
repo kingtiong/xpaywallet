@@ -14,7 +14,6 @@ import {
 } from '@metamask/eth-sig-util';
 import {toBuffer} from 'ethereumjs-util';
 import {pbkdf2} from 'react-native-fast-crypto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export class EthWallet implements Wallet {
     provider: EthProvider;
@@ -39,7 +38,6 @@ export class EthWallet implements Wallet {
     }
 
     async mnemonicToSeed(mnemonic, passphrase = '') {
-        console.log('Passphrase used:', passphrase);
         const mnemonicBuffer = Buffer.from(mnemonic, 'utf8');
         const saltBuffer = Buffer.from('mnemonic' + passphrase, 'utf8');
         const iterations = 2048;
@@ -54,7 +52,6 @@ export class EthWallet implements Wallet {
                 keyLength,
                 alg,
             );
-            console.log('Generated seed:', seed.toString('hex'));
             return seed.toString('hex');
         } catch (error) {
             console.error('Error generating seed from mnemonic:', error);
@@ -62,30 +59,18 @@ export class EthWallet implements Wallet {
         }
     }
 
-    async saveMnemonic(mnemonic: string) {
-        await AsyncStorage.setItem('walletMnemonic', mnemonic);
-    }
-
-    async getMnemonic(): Promise<string | null> {
-        return await AsyncStorage.getItem('walletMnemonic');
-    }
-
     async fromMnemonic(data, mnemonic): Promise<Object> {
         try {
-            const mnemonicToUse = mnemonic || (await this.getMnemonic());
-            if (!mnemonicToUse) {
-                throw new Error('No mnemonic provided or stored');
+            if (!mnemonic) {
+                throw new Error('No mnemonic provided');
             }
-            console.log('Mnemonic used:', mnemonicToUse);
             const provider = await ProviderFactory.getProvider(data.chain);
             const wallet = await this.createWallet(
-                mnemonicToUse,
+                mnemonic,
                 0,
                 provider.provider,
             );
             this.setSigner(wallet);
-            await this.saveMnemonic(mnemonicToUse);
-            console.log('Generated address:', wallet.address);
             return {
                 success: true,
                 data: {
@@ -106,10 +91,8 @@ export class EthWallet implements Wallet {
     }
 
     async createWallet(mnemonic, index = 0, provider): Promise<Wallet> {
-        console.log('Derivation index:', index);
         const path = `m/44'/60'/0'/0/${index}`;
         const wallet = ethers.Wallet.fromMnemonic(mnemonic, path);
-        console.log('Derived address:', wallet.address);
         return wallet.connect(provider);
     }
 
@@ -281,7 +264,6 @@ export class EthWallet implements Wallet {
     }
 
     async signTypedData(dataToSign: any) {
-        console.log(this.data.privateKey);
         let privateKeyBuffer = toBuffer(this.data.privateKey);
         return web3SignTypeData({
             privateKey: privateKeyBuffer,

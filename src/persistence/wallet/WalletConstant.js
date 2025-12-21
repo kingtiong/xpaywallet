@@ -41,6 +41,7 @@ export const DEFAULT_WALLET = {
     defaultChain: 'ETH',
     logoURI: applicationProperties.logoURI.app,
     coins: [
+        btc,
         eth,
         tron,
         bsc,
