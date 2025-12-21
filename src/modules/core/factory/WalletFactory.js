@@ -40,21 +40,35 @@ export class WalletFactory {
                 const coin = coins[i];
                 const provider = await ProviderFactory.getProvider(coin.chain);
                 const startTime = performance.now();
-                // if (coin.chain === 'BTC') {
-                //     const btcWallet = new BitcoinWallet(provider);
-                //     const {success, data} = await btcWallet.fromMnemonic(
-                //         coin,
-                //         mnemonic || coin.mnemonic,
-                //     );
-                //     if (success) {
-                //         this.wallets[coin.chain] = btcWallet;
-                //         all.push({
-                //             ...data,
-                //             mnemonic,
-                //             privateKey: data.privateKey,
-                //         });
-                //     }
-                // } else
+                if (coin.chain === 'BTC') {
+                    let btcWallet = this.wallets.BTC;
+                    if (!btcWallet) {
+                        btcWallet = new BitcoinWallet(provider);
+                        const {success, data} = await btcWallet.fromMnemonic(
+                            coin,
+                            mnemonic || coin.mnemonic,
+                        );
+                        if (success) {
+                            this.wallets[coin.chain] = btcWallet;
+                            all.push({
+                                ...data,
+                                mnemonic,
+                                privateKey: data.privateKey,
+                            });
+                        }
+                    } else {
+                        const baseBtcWallet = {
+                            ...coin,
+                            mnemonic,
+                            walletAddress: btcWallet.data?.walletAddress,
+                            privateKey: btcWallet.data?.privateKey,
+                        };
+                        if (coin.type === ASSET_TYPE_COIN) {
+                            this.wallets[coin.chain] = btcWallet;
+                        }
+                        all.push(baseBtcWallet);
+                    }
+                } else
                 if (
                     coin.chain === 'ETH' ||
                     coin.chain === 'BSC' ||

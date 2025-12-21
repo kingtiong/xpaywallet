@@ -1,6 +1,8 @@
 import {Core} from '@walletconnect/core';
 import {Web3Wallet} from '@walletconnect/web3wallet';
 import CommonLoading from '@components/commons/CommonLoading';
+import {WalletFactory} from '@modules/core/factory/WalletFactory';
+import {CHAIN_ID_TYPE_MAP} from '@modules/core/constant/constant';
 
 export let web3wallet;
 
@@ -73,19 +75,43 @@ export async function onConnect({uri}) {
 // Function to approve session proposal
 export async function approveSession(proposal) {
     try {
-        const { id, params } = proposal;
-        const { requiredNamespaces, optionalNamespaces } = params;
-        
-        // Create session with supported namespaces
+        const {id, params} = proposal;
+        const {requiredNamespaces, optionalNamespaces} = params;
+
+        const eip155 = requiredNamespaces?.eip155 || optionalNamespaces?.eip155;
+        const requestedChain =
+            eip155?.chains && eip155.chains.length ? eip155.chains[0] : 'eip155:1';
+        const numericChainId = requestedChain.replace('eip155:', '');
+        const chainName = CHAIN_ID_TYPE_MAP[numericChainId] || 'ETH';
+
+        const wallet = await WalletFactory.getWallet(chainName);
+        const address = wallet?.data?.walletAddress;
+        if (!address) {
+            throw new Error(`No wallet address available for chain ${chainName}`);
+        }
+
+        const chains = eip155?.chains?.length ? eip155.chains : [requestedChain];
+
         const session = await web3wallet.approveSession({
             id,
             namespaces: {
                 eip155: {
-                    accounts: [`eip155:1:0x1234567890123456789012345678901234567890`], // Replace with actual wallet address
-                    methods: ['eth_sendTransaction', 'eth_signTransaction', 'eth_sign', 'personal_sign'],
-                    events: ['chainChanged', 'accountsChanged']
-                }
-            }
+                    accounts: chains.map(c => `${c}:${address}`),
+                    methods:
+                        eip155?.methods || [
+                            'eth_sendTransaction',
+                            'eth_signTransaction',
+                            'eth_sign',
+                            'personal_sign',
+                            'eth_signTypedData',
+                            'eth_signTypedData_v4',
+                            'eth_requestAccounts',
+                            'eth_accounts',
+                            'eth_chainId',
+                        ],
+                    events: eip155?.events || ['chainChanged', 'accountsChanged'],
+                },
+            },
         });
         
         console.log('Session approved:', session);
